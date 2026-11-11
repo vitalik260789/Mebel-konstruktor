@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Мебель-Конструктор — проектирование корпусной мебели</title>
+<meta name="description" content="Проектирование корпусной мебели: 3D, деталировка, присадка, чертежи деталей, карта раскроя, экспорт CSV и DXF.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='4' y='3' width='24' height='26' rx='2' fill='%23c26a2e'/><rect x='7' y='6' width='18' height='9' fill='%23f6e7d8'/><rect x='7' y='17' width='18' height='9' fill='%23f6e7d8'/><circle cx='16' cy='10.5' r='1.4' fill='%23c26a2e'/><circle cx='16' cy='21.5' r='1.4' fill='%23c26a2e'/></svg>">
+<link rel="stylesheet" href="style.css">
+<script type="importmap">
+{ "imports": {
+  "three": "./vendor/three.module.js",
+  "three/addons/": "./vendor/addons/"
+} }
+</script>
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="logo">▦</span> Мебель-Конструктор</div>
+  <input id="projName" class="projname" title="Название проекта">
+  <div class="actions">
+    <button id="btnNew" title="Новый проект">Новый</button>
+    <button id="btnOpen" title="Открыть файл проекта">Открыть</button>
+    <button id="btnSave" title="Скачать файл проекта (.json)">Сохранить</button>
+    <button id="btnPrint" title="Печать / PDF: спецификация, чертежи, раскрой">Печать</button>
+    <button id="btnShare" class="primary" title="Ссылка на проект для друга">Поделиться</button>
+    <input type="file" id="fileOpen" accept=".json,application/json" hidden>
+  </div>
+</header>
+
+<div class="app">
+  <aside class="side">
+    <div class="box">
+      <div class="box-h">Изделия</div>
+      <div id="items"></div>
+      <div class="add-row">
+        <select id="tplSelect"></select>
+        <button id="btnAddItem">+ Добавить</button>
+      </div>
+    </div>
+    <div class="box">
+      <div class="box-h">Параметры <span id="itemTitle" class="muted"></span></div>
+      <div id="form"></div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <nav class="tabs" id="tabs">
+      <button data-tab="3d" class="on">3D-вид</button>
+      <button data-tab="parts">Детали</button>
+      <button data-tab="draw">Чертежи</button>
+      <button data-tab="nest">Раскрой</button>
+      <button data-tab="hw">Фурнитура</button>
+      <button data-tab="help">Как пользоваться</button>
+    </nav>
+    <div id="warn" class="warn" hidden></div>
+
+    <section class="tab" id="tab-3d">
+      <div class="v3d-wrap">
+        <div id="view3d"></div>
+        <div class="v3d-tools">
+          <label><input type="checkbox" id="optFronts" checked> Фасады</label>
+          <label><input type="checkbox" id="optTransp"> Прозрачно</label>
+          <label><input type="checkbox" id="optHoles" checked> Отверстия</label>
+          <label><input type="checkbox" id="optExplode"> Разнести</label>
+          <button id="btnResetView">Вид спереди</button>
+        </div>
+        <div id="v3dInfo" class="v3d-info"></div>
+        <div id="v3dDims" class="v3d-dims"></div>
+      </div>
+    </section>
+
+    <section class="tab" id="tab-parts" hidden>
+      <div class="bar">
+        <span class="muted">Нажми на кромку (Д1/Д2/Ш1/Ш2), чтобы поменять её толщину. Нажми на строку, чтобы открыть чертёж.</span>
+        <span class="grow"></span>
+        <button id="btnCSV">Скачать CSV для распила</button>
+        <button id="btnDXFall">DXF всех деталей</button>
+      </div>
+      <div class="tblwrap"><table class="tbl" id="partsTbl"></table></div>
+      <div class="totals" id="partsTotals"></div>
+      <details class="custom">
+        <summary>+ Добавить свою деталь вручную</summary>
+        <div class="grid-form" id="customForm">
+          <label>Название<input id="cName" value="Деталь"></label>
+          <label>Материал<input id="cMat" value="ЛДСП Белый"></label>
+          <label>Толщина<input id="cT" type="number" value="16"></label>
+          <label>Длина<input id="cL" type="number" value="600"></label>
+          <label>Ширина<input id="cW" type="number" value="300"></label>
+          <label>Кол-во<input id="cQ" type="number" value="1" min="1"></label>
+          <button id="btnAddCustom" class="primary">Добавить</button>
+        </div>
+      </details>
+    </section>
+
+    <section class="tab" id="tab-draw" hidden>
+      <div class="draw-layout">
+        <div class="draw-list" id="drawList"></div>
+        <div class="draw-main">
+          <div class="bar">
+            <h3 id="drawTitle"></h3><span class="grow"></span>
+            <button id="btnDXF1">DXF детали</button>
+          </div>
+          <div id="drawing"></div>
+          <div class="legend">
+            <span><i class="lg thru"></i>сквозное</span>
+            <span><i class="lg a"></i>глухое, пласть A (видимая)</span>
+            <span><i class="lg b"></i>глухое, пласть B (обратная, вид насквозь)</span>
+            <span><i class="lg e"></i>в торец</span>
+            <span><i class="lg k2"></i>кромка 2 мм</span>
+            <span><i class="lg k04"></i>кромка 0.4–1 мм</span>
+          </div>
+          <div class="tblwrap"><table class="tbl small" id="holesTbl"></table></div>
+          <details class="custom">
+            <summary>+ Добавить отверстие</summary>
+            <div class="grid-form">
+              <label>Сторона<select id="hSide">
+                <option value="A">Пласть A</option><option value="B">Пласть B</option>
+                <option value="L1">Торец Д1</option><option value="L2">Торец Д2</option>
+                <option value="W1">Торец Ш1</option><option value="W2">Торец Ш2</option>
+              </select></label>
+              <label>X, мм<input id="hX" type="number" value="50"></label>
+              <label>Y, мм<input id="hY" type="number" value="50"></label>
+              <label>Ø, мм<input id="hD" type="number" value="5"></label>
+              <label>Глубина<input id="hDepth" type="number" value="12"></label>
+              <label class="chk"><input id="hThru" type="checkbox"> насквозь</label>
+              <button id="btnAddHole" class="primary">Добавить</button>
+            </div>
+            <p class="muted">Для торца: на Д1/Д2 задаётся X (вдоль кромки), на Ш1/Ш2 — Y. Отверстие добавится ко всем одинаковым деталям этой строки.</p>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <section class="tab" id="tab-nest" hidden>
+      <div class="bar wrap">
+        <label>Лист, длина<input id="sL" type="number"></label>
+        <label>ширина<input id="sW" type="number"></label>
+        <label>Пропил<input id="sKerf" type="number"></label>
+        <label>Обзол (край)<input id="sTrim" type="number"></label>
+        <label class="chk"><input id="sGrain" type="checkbox"> Учитывать текстуру (не поворачивать)</label>
+        <label class="chk"><input id="sSub" type="checkbox"> Пильный размер = чистовой − кромка</label>
+      </div>
+      <div id="nestOut"></div>
+    </section>
+
+    <section class="tab" id="tab-hw" hidden>
+      <div id="hwOut"></div>
+    </section>
+
+    <section class="tab" id="tab-help" hidden>
+      <div class="help">
+        <h2>Как пользоваться</h2>
+        <ol>
+          <li><b>Изделие.</b> Слева выбери шаблон (тумба, комод, шкаф, стеллаж) и нажми «Добавить». В проекте может быть сколько угодно изделий.</li>
+          <li><b>Параметры.</b> Задай габариты, толщины, материалы, тип крышки и основания, компоновку фасадов, полки и кромку. Все детали и отверстия пересчитываются сразу.</li>
+          <li><b>3D-вид.</b> Крути мышью (левая — вращение, правая — сдвиг, колесо — масштаб). Клик по детали показывает её размеры. «Прозрачно» и «Разнести» помогают заглянуть внутрь.</li>
+          <li><b>Детали.</b> Спецификация с чистовыми и пильными размерами. Кромку можно менять кликом. CSV открывается в Excel, его можно отправить в распиловочный центр.</li>
+          <li><b>Чертежи.</b> Для каждой детали: размеры, координаты отверстий от левого нижнего угла (0,0), таблица присадки. Можно добавить свои отверстия.</li>
+          <li><b>Раскрой.</b> Гильотинная раскладка на листы (подходит для форматно-раскроечного станка) с учётом пропила и обзола.</li>
+          <li><b>Печать.</b> Кнопка «Печать» собирает спецификацию, фурнитуру, все чертежи и раскрой. В окне печати можно выбрать «Сохранить как PDF».</li>
+          <li><b>Поделиться.</b> Ссылка содержит весь проект. Друг откроет её у себя и сможет работать со своей копией. Проект также сам сохраняется в этом браузере.</li>
+        </ol>
+        <h3>Обозначения</h3>
+        <p>Деталь: <b>Длина × Ширина × Толщина</b>. Торцы: <b>Д1</b> — нижний длинный, <b>Д2</b> — верхний длинный, <b>Ш1</b> — левый, <b>Ш2</b> — правый (как на чертеже). Пласть <b>A</b> — сторона, которую видно на чертеже, <b>B</b> — обратная.</p>
+        <h3>Стандарты присадки по умолчанию</h3>
+        <ul>
+          <li>Конфирмат 7×50: в пласть Ø7 насквозь, в торец Ø5 глубиной 50; 50 мм от краёв, шаг не более 400.</li>
+          <li>Петля: чашка Ø35 глубиной 13, центр в 21,5 мм от края двери, 100 мм от верха и низа; планка — 2 отв. Ø5×12 в 37 мм от фронта боковины, через 32 мм.</li>
+          <li>Полкодержатель: Ø5×12, 37 мм от фронта и от задней кромки боковины.</li>
+          <li>Ящик: роликовые направляющие, зазор 13 мм на сторону, короб на 50 мм ниже фасада.</li>
+        </ul>
+        <p class="muted">Перед распилом проверь размеры и присадку под свою фурнитуру: у разных производителей петель и направляющих размеры бывают разные.</p>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div id="modal" class="modal" hidden><div class="modal-c"><div id="modalBody"></div><div class="modal-a"><button id="modalClose">Закрыть</button></div></div></div>
+<div id="toast" class="toast" hidden></div>
+<div id="print"></div>
+<script type="module" src="app.js"></script>
+</body>
+</html>
