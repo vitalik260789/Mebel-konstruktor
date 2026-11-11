@@ -567,7 +567,7 @@ function render3d() {
   }
   if ($('#optDims').checked && parts.length) addDims(parts, center);
   T3.grid.position.y = -0.5;
-  const key = `${sel.item}:${d.W}:${d.H}:${d.D}`;
+  const key = `${sel.item}:${d.W}:${d.H}:${d.D}:${T3.camera.aspect < 1}`;
   if (T3.fitKey !== key) { fitCamera(d); T3.fitKey = key; }
   if (T3.sel) select3d(T3.sel);
 }
@@ -609,9 +609,10 @@ function addDims(parts, center) {
 function fitCamera(d, front = false) {
   const size = Math.max(d.W, d.H, d.D);
   const t = new T3.THREE.Vector3(0, d.H * 0.42, 0);
+  const k = Math.max(1, 0.95 / T3.camera.aspect); // узкий (вертикальный) экран — отодвигаем камеру
+  const v = front ? new T3.THREE.Vector3(0, 0, size * 2.9) : new T3.THREE.Vector3(size * 1.45, d.H * 0.08 + size * 0.85, size * 2.45);
   T3.controls.target.copy(t);
-  if (front) T3.camera.position.set(0, d.H * 0.42, size * 2.9);
-  else T3.camera.position.set(size * 1.45, d.H / 2 + size * 0.85, size * 2.45);
+  T3.camera.position.copy(t).addScaledVector(v, k);
   T3.controls.update();
 }
 for (const id of ['#optFronts', '#optTransp', '#optHoles', '#optExplode', '#optDims']) $(id).addEventListener('change', render3d);
