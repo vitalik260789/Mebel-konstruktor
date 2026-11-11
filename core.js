@@ -28,6 +28,38 @@ export const HOLE_TYPES = {
 
 export const EDGE_NAMES = { L1: 'Д1', L2: 'Д2', W1: 'Ш1', W2: 'Ш2' };
 
+// Каталог материалов. kind: plate — плиты корпуса/фасадов, thin — задние стенки и дно ящиков.
+export const MATERIALS = [
+  { group: 'ЛДСП', name: 'ЛДСП Белый', kind: 'plate', color: '#f2f0ec' },
+  { group: 'ЛДСП', name: 'ЛДСП Белый шагрень', kind: 'plate', color: '#eceae4' },
+  { group: 'ЛДСП', name: 'ЛДСП Серый', kind: 'plate', color: '#b9bbbd' },
+  { group: 'ЛДСП', name: 'ЛДСП Антрацит', kind: 'plate', color: '#4b4e52' },
+  { group: 'ЛДСП', name: 'ЛДСП Чёрный', kind: 'plate', color: '#2a2a2b' },
+  { group: 'ЛДСП', name: 'ЛДСП Кашемир', kind: 'plate', color: '#d8cdbd' },
+  { group: 'ЛДСП', name: 'ЛДСП Дуб Сонома', kind: 'plate', color: '#c8a27a' },
+  { group: 'ЛДСП', name: 'ЛДСП Дуб Крафт золотой', kind: 'plate', color: '#c08a4e' },
+  { group: 'ЛДСП', name: 'ЛДСП Дуб Галифакс', kind: 'plate', color: '#a07a55' },
+  { group: 'ЛДСП', name: 'ЛДСП Дуб Вотан', kind: 'plate', color: '#8a6845' },
+  { group: 'ЛДСП', name: 'ЛДСП Ясень Шимо светлый', kind: 'plate', color: '#e3d6c4' },
+  { group: 'ЛДСП', name: 'ЛДСП Орех', kind: 'plate', color: '#7a5236' },
+  { group: 'ЛДСП', name: 'ЛДСП Венге', kind: 'plate', color: '#3e2c22' },
+  { group: 'ЛДСП', name: 'ЛДСП Бук', kind: 'plate', color: '#d9a877' },
+  { group: 'МДФ', name: 'МДФ крашеный Белый', kind: 'plate', color: '#fafafa' },
+  { group: 'МДФ', name: 'МДФ крашеный Серый', kind: 'plate', color: '#a9adb1' },
+  { group: 'МДФ', name: 'МДФ под покраску', kind: 'plate', color: '#c9b79c' },
+  { group: 'МДФ', name: 'МДФ шпонированный Дуб', kind: 'plate', color: '#b8905f' },
+  { group: 'Фанера и массив', name: 'Фанера берёзовая', kind: 'plate', color: '#e2c9a0' },
+  { group: 'Фанера и массив', name: 'Мебельный щит Сосна', kind: 'plate', color: '#e6c18c' },
+  { group: 'Фанера и массив', name: 'Мебельный щит Дуб', kind: 'plate', color: '#bf9363' },
+  { group: 'ХДФ / ДВП', name: 'ХДФ Белый', kind: 'thin', color: '#efede8' },
+  { group: 'ХДФ / ДВП', name: 'ХДФ Серый', kind: 'thin', color: '#b5b7b9' },
+  { group: 'ХДФ / ДВП', name: 'ХДФ Венге', kind: 'thin', color: '#4a3528' },
+  { group: 'ХДФ / ДВП', name: 'ХДФ Дуб Сонома', kind: 'thin', color: '#c8a27a' },
+  { group: 'ХДФ / ДВП', name: 'ДВП коричневый', kind: 'thin', color: '#8b6a4a' },
+  { group: 'ХДФ / ДВП', name: 'Фанера 4 мм', kind: 'thin', color: '#e2c9a0' },
+];
+export const THICKNESSES = { plate: [8, 10, 12, 15, 16, 18, 19, 22, 25, 28, 32], thin: [3, 4, 5, 6, 8] };
+
 const BASE = {
   type: 'cabinet', t: 16, matCorpus: 'ЛДСП Белый', frontT: 16, matFront: 'ЛДСП Дуб Сонома',
   backType: 'overlay', backT: 3, matBack: 'ХДФ Белый', topType: 'overlay', base: 'plinth',

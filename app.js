@@ -106,9 +106,9 @@ const FIELDS = [
     ['W', 'Ширина', 'num'], ['H', 'Высота корпуса (без ножек)', 'num'], ['D', 'Глубина корпуса (без фасада)', 'num'],
   ]],
   ['Материалы', [
-    ['matCorpus', 'Корпус', 'text'], ['t', 'Толщина корпуса', 'num'],
-    ['matFront', 'Фасады', 'text'], ['frontT', 'Толщина фасадов', 'num'],
-    ['matBack', 'Задняя стенка, дно ящиков', 'text'], ['backT', 'Толщина ХДФ', 'num'],
+    ['matCorpus', 'Корпус', 'mat', 'plate'], ['t', 'Толщина корпуса', 'thk', 'plate'],
+    ['matFront', 'Фасады', 'mat', 'plate', p => p.layout !== 'none'], ['frontT', 'Толщина фасадов', 'thk', 'plate', p => p.layout !== 'none'],
+    ['matBack', 'Задняя стенка, дно ящиков', 'mat', 'thin'], ['backT', 'Толщина задней стенки', 'thk', 'thin'],
   ]],
   ['Конструкция', [
     ['topType', 'Крышка', 'sel', [['overlay', 'Накладная'], ['inset', 'Вкладная']]],
@@ -149,17 +149,46 @@ function renderForm() {
     const rows = fs.filter(f => typeof f[3] === 'function' ? f[3](p) : !f[4] || f[4](p)).map(([k, label, type, opt]) => {
       const id = 'f_' + k;
       let ctl;
-      if (type === 'sel') ctl = `<select id="${id}" data-k="${k}">${opt.map(([v, l]) => `<option value="${v}" ${String(p[k]) === String(v) ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
+      if (type === 'mat') ctl = matSelect(id, k, p[k], opt);
+      else if (type === 'thk') {
+        const list = [...new Set([...C.THICKNESSES[opt], Number(p[k])])].sort((a, b) => a - b);
+        ctl = `<select id="${id}" data-k="${k}">${list.map(v => `<option value="${v}" ${Number(p[k]) === v ? 'selected' : ''}>${v} мм</option>`).join('')}</select>`;
+      } else if (type === 'sel') ctl = `<select id="${id}" data-k="${k}">${opt.map(([v, l]) => `<option value="${v}" ${String(p[k]) === String(v) ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
       else ctl = `<input id="${id}" data-k="${k}" ${type === 'num' ? 'type="number" step="any"' : ''} value="${esc(p[k])}">`;
       return `<div class="fr"><label for="${id}">${label}</label>${ctl}</div>`;
     }).join('');
     return rows ? `<fieldset><legend>${g}</legend>${rows}</fieldset>` : '';
   }).join('');
 }
+// ---------- Материалы ----------
+const allMaterials = () => [...C.MATERIALS, ...(project.materials || []).map(m => ({ ...m, group: 'Мои материалы' }))];
+function matSelect(id, k, val, kind) {
+  const list = allMaterials().filter(m => !kind || m.kind === kind || m.group === 'Мои материалы');
+  if (val && !allMaterials().some(m => m.name === val)) list.push({ name: val, group: 'Мои материалы' });
+  const groups = [...new Set(list.map(m => m.group))];
+  return `<select id="${id}" ${k ? `data-k="${k}"` : ''} data-kind="${kind || ''}">${groups.map(g => `<optgroup label="${esc(g)}">${list.filter(m => m.group === g).map(m => `<option ${m.name === val ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}</optgroup>`).join('')}<option value="__new">+ Свой материал…</option></select>`;
+}
+function askNewMaterial(kind) {
+  const name = (prompt('Название материала (например: ЛДСП Egger Дуб Гладстон):') || '').trim();
+  if (!name) return null;
+  project.materials = project.materials || [];
+  if (!allMaterials().some(m => m.name === name)) project.materials.push({ name, kind: kind || 'plate', color: '#d9cfc2' });
+  return name;
+}
+function matColor(name, role) {
+  const m = allMaterials().find(x => x.name === name);
+  return m ? m.color : { corpus: '#efe9df', front: '#c8a27a', back: '#d9d4cc', box: '#e6dccb', custom: '#e6dccb' }[role] || '#eeeeee';
+}
+
 let formTimer;
 $('#form').addEventListener('input', e => {
   const k = e.target.dataset.k; if (!k) return;
   const it = project.items[sel.item], el = e.target;
+  if (el.value === '__new') {
+    const name = askNewMaterial(el.dataset.kind);
+    if (name) it.params[k] = name;
+    update({ form: true }); return;
+  }
   const v = el.type === 'number' ? Number(el.value) : el.tagName === 'SELECT' && /^-?[\d.]+$/.test(el.value) ? Number(el.value) : el.value;
   if (el.type === 'number' && (el.value === '' || isNaN(v))) return;
   it.params[k] = v;
@@ -214,6 +243,8 @@ function renderParts() {
       <td>${p.role === 'custom' ? `<button data-delc="${esc(p.uid)}" title="Удалить">✕</button>` : ''}</td></tr>`;
   }
   $('#partsTbl').innerHTML = html + '</tbody>';
+  const cur = $('#cMat').value && $('#cMat').value !== '__new' ? $('#cMat').value : 'ЛДСП Белый';
+  $('#cMatWrap').innerHTML = matSelect('cMat', '', cur, '');
   const s = C.summary(built, project);
   $('#partsTotals').innerHTML =
     Object.entries(s.area).map(([k, v]) => `<div><b>${esc(k)}</b><br>${fmt(v)} м²</div>`).join('') +
@@ -231,6 +262,12 @@ $('#partsTbl').addEventListener('click', e => {
   }
   const row = e.target.closest('tr.row');
   if (row) { sel.uid = row.dataset.uid; setTab('draw'); }
+});
+$('#cMatWrap').addEventListener('change', e => {
+  if (e.target.value !== '__new') return;
+  const name = askNewMaterial('plate');
+  $('#cMatWrap').innerHTML = matSelect('cMat', '', name || 'ЛДСП Белый', '');
+  saveLocal();
 });
 $('#btnAddCustom').onclick = () => {
   const n = id => Number($(id).value);
@@ -417,17 +454,20 @@ function renderHW() {
 
 // ---------- 3D ----------
 let T3 = null, t3loading = false;
-const ROLE_COLOR = { corpus: 0xefe9df, front: 0xc8a27a, back: 0xd9d4cc, box: 0xe6dccb };
 async function init3d() {
   if (T3 || t3loading) return;
   t3loading = true;
   try {
     const THREE = await import('three');
     const { OrbitControls } = await import('three/addons/controls/OrbitControls.js');
+    const { CSS2DRenderer, CSS2DObject } = await import('three/addons/renderers/CSS2DRenderer.js');
     const el = $('#view3d');
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     el.appendChild(renderer.domElement);
+    const labels = new CSS2DRenderer();
+    labels.domElement.className = 'labels3d';
+    el.appendChild(labels.domElement);
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(35, 1, 10, 50000);
     scene.add(new THREE.HemisphereLight(0xffffff, 0x8a8278, 1.6));
@@ -437,13 +477,13 @@ async function init3d() {
     controls.enableDamping = true;
     const group = new THREE.Group(); scene.add(group);
     const grid = new THREE.GridHelper(4000, 40, 0xbbbbbb, 0xd5d5d5); scene.add(grid);
-    T3 = { THREE, renderer, scene, camera, controls, group, grid, meshes: [], sel: null, fitKey: '' };
+    T3 = { THREE, CSS2DObject, renderer, labels, scene, camera, controls, group, grid, meshes: [], sel: null, fitKey: '' };
     const resize = () => {
       const w = el.clientWidth || 800, h = el.clientHeight || 500;
-      renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix();
+      renderer.setSize(w, h); labels.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix();
     };
     new ResizeObserver(resize).observe(el); resize();
-    renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
+    renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); labels.render(scene, camera); });
     // выбор детали кликом
     let down = null;
     renderer.domElement.addEventListener('pointerdown', e => (down = [e.clientX, e.clientY]));
@@ -476,6 +516,7 @@ function select3d(uid) {
 function render3d() {
   if (!T3) { init3d(); return; }
   const { THREE, group } = T3;
+  group.traverse(o => o.isCSS2DObject && o.element.remove());
   group.clear(); T3.meshes = [];
   const g = built.items[sel.item];
   const dimsEl = $('#v3dDims');
@@ -490,7 +531,7 @@ function render3d() {
   for (const p of parts) {
     if (p.role === 'front' && !showF) continue;
     const size = C.worldSize(p);
-    const mat = new THREE.MeshStandardMaterial({ color: ROLE_COLOR[p.role] || 0xeeeeee, roughness: 0.8, transparent: transp && p.role !== 'front', opacity: transp && p.role !== 'front' ? 0.3 : 1, depthWrite: !(transp && p.role !== 'front') });
+    const mat = new THREE.MeshStandardMaterial({ color: matColor(p.material, p.role), roughness: 0.8, transparent: transp && p.role !== 'front', opacity: transp && p.role !== 'front' ? 0.3 : 1, depthWrite: !(transp && p.role !== 'front') });
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size), mat);
     const pc = new THREE.Vector3(p.ox + size[0] / 2, p.oy + size[1] / 2, p.oz + size[2] / 2);
     let off = new THREE.Vector3();
@@ -524,20 +565,56 @@ function render3d() {
       }
     }
   }
+  if ($('#optDims').checked && parts.length) addDims(parts, center);
   T3.grid.position.y = -0.5;
   const key = `${sel.item}:${d.W}:${d.H}:${d.D}`;
   if (T3.fitKey !== key) { fitCamera(d); T3.fitKey = key; }
   if (T3.sel) select3d(T3.sel);
 }
+// Габаритные размеры на 3D-модели
+function addDims(parts, center) {
+  const { THREE, CSS2DObject, group } = T3;
+  const mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
+  for (const p of parts) {
+    const sz = C.worldSize(p), o = [p.ox, p.oy, p.oz];
+    for (let i = 0; i < 3; i++) { mn[i] = Math.min(mn[i], o[i]); mx[i] = Math.max(mx[i], o[i] + sz[i]); }
+  }
+  mn[1] = 0;
+  const off = Math.max(60, 0.12 * Math.max(mx[0] - mn[0], mx[1], mx[2] - mn[2]));
+  const mat = new THREE.LineBasicMaterial({ color: 0xb4321f });
+  const extMat = new THREE.LineBasicMaterial({ color: 0xb4321f, transparent: true, opacity: 0.45 });
+  const V = (x, y, z) => new THREE.Vector3(x, y, z).sub(center);
+  const seg = (pts, m) => group.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(pts), m));
+  const label = (text, pos) => {
+    const d = document.createElement('div'); d.className = 'dim3d'; d.textContent = text;
+    const o = new CSS2DObject(d); o.position.copy(pos); group.add(o);
+  };
+  const tick = off * 0.18;
+  // dim(a, b, ext): a, b — концы размерной линии; ext — откуда вести выносные линии
+  const dim = (a, b, ea, eb, text) => {
+    seg([a, b], mat);
+    seg([ea, a, eb, b], extMat);
+    const dir = b.clone().sub(a).normalize();
+    for (const q of [a, b]) seg([q.clone().addScaledVector(dir, -tick).add(new THREE.Vector3(0, 0, 0)), q.clone().addScaledVector(dir, tick)], mat);
+    label(text, a.clone().add(b).multiplyScalar(0.5));
+  };
+  const zF = mx[2], xR = mx[0];
+  // Ширина — по фронту внизу
+  dim(V(mn[0], -off * 0.6, zF + off), V(mx[0], -off * 0.6, zF + off), V(mn[0], 0, zF), V(mx[0], 0, zF), `Ш ${Math.round(mx[0] - mn[0])}`);
+  // Высота — справа спереди
+  dim(V(xR + off, 0, zF), V(xR + off, mx[1], zF), V(xR, 0, zF), V(xR, mx[1], zF), `В ${Math.round(mx[1])}`);
+  // Глубина — справа внизу
+  dim(V(xR + off, -off * 0.6, mn[2]), V(xR + off, -off * 0.6, zF), V(xR, 0, mn[2]), V(xR, 0, zF), `Г ${Math.round(mx[2] - mn[2])}`);
+}
 function fitCamera(d, front = false) {
   const size = Math.max(d.W, d.H, d.D);
-  const t = new T3.THREE.Vector3(0, d.H / 2, 0);
+  const t = new T3.THREE.Vector3(0, d.H * 0.42, 0);
   T3.controls.target.copy(t);
-  if (front) T3.camera.position.set(0, d.H / 2, size * 2.6);
-  else T3.camera.position.set(size * 1.25, d.H / 2 + size * 0.75, size * 2.1);
+  if (front) T3.camera.position.set(0, d.H * 0.42, size * 2.9);
+  else T3.camera.position.set(size * 1.45, d.H / 2 + size * 0.85, size * 2.45);
   T3.controls.update();
 }
-for (const id of ['#optFronts', '#optTransp', '#optHoles', '#optExplode']) $(id).addEventListener('change', render3d);
+for (const id of ['#optFronts', '#optTransp', '#optHoles', '#optExplode', '#optDims']) $(id).addEventListener('change', render3d);
 $('#btnResetView').onclick = () => { const g = built.items[sel.item]; if (T3 && g) fitCamera(g.dims, true); };
 
 // ---------- Печать ----------
