@@ -1,4 +1,4 @@
-import * as C from './core.js';
+import * as C from './core.js?v=202611112352';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
