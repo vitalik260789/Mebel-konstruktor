@@ -1,4 +1,4 @@
-import * as C from './core.js?v=202611120939';
+import * as C from './core.js?v=202611120944';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -127,13 +127,22 @@ const FIELDS = [
     ['plinthH', 'Высота цоколя', 'num', p => p.base === 'plinth'],
     ['plinthSetback', 'Цоколь утоплен на', 'num', p => p.base === 'plinth'],
     ['legsH', 'Высота ножек', 'num', p => p.base === 'legs'],
-    ['backType', 'Задняя стенка', 'sel', [['overlay', 'ХДФ накладная'], ['none', 'Нет']]],
+    ['backType', 'Задняя стенка', 'sel', [['overlay', 'Накладная (на гвозди)'], ['groove', 'В паз'], ['none', 'Нет']]],
+    ['grooveOff', 'Паз: отступ от заднего края', 'num', p => p.backType === 'groove'],
+    ['grooveDepth', 'Паз: глубина', 'num', p => p.backType === 'groove'],
+  ]],
+  ['Крепёж и фурнитура', [
+    ['joint', 'Соединение корпуса', 'sel', Object.entries(C.JOINTS)],
+    ['hingeBrand', 'Петли', 'sel', [...Object.entries(C.HINGES).map(([k, v]) => [k, v.label]), ['custom', 'Свои размеры']], p => blocksOf(p).some(b => b.type === 'doors')],
+    ['cupOffset', 'Центр чашки от края двери', 'num', p => blocksOf(p).some(b => b.type === 'doors')],
+    ['cupDepth', 'Глубина чашки Ø35', 'num', p => blocksOf(p).some(b => b.type === 'doors')],
+    ['hingeEnd', 'Петля от верха/низа двери', 'num', p => blocksOf(p).some(b => b.type === 'doors')],
+    ['runner', 'Направляющие ящиков', 'sel', Object.entries(C.RUNNERS).map(([k, v]) => [k, v.label]), hasDrawers],
   ]],
   ['Фасады', [
     ['gap', 'Зазор между фасадами', 'num', hasFronts],
     ['gapEdge', 'Зазор по краю', 'num', hasFronts],
     ['handle', 'Ручка, межосевое', 'sel', [[0, 'Без ручек'], [64, '64'], [96, '96'], [128, '128'], [160, '160'], [192, '192'], [256, '256']], hasFronts],
-    ['runnerGap', 'Зазор под направляющую', 'num', hasDrawers],
   ]],
   ['Полки', [
     ['shelfType', 'Крепление полок', 'sel', [['pins', 'Полкодержатели'], ['fixed', 'Конфирматы']], hasShelves],
@@ -263,6 +272,8 @@ $('#form').addEventListener('input', e => {
   const v = el.type === 'number' ? Number(el.value) : el.tagName === 'SELECT' && /^-?[\d.]+$/.test(el.value) ? Number(el.value) : el.value;
   if (el.type === 'number' && (el.value === '' || isNaN(v))) return;
   it.params[k] = v;
+  if (k === 'hingeBrand' && C.HINGES[v]) Object.assign(it.params, { cupOffset: C.HINGES[v].cupOffset, cupDepth: C.HINGES[v].cupDepth });
+  if ((k === 'cupOffset' || k === 'cupDepth') && C.HINGES[it.params.hingeBrand] && C.HINGES[it.params.hingeBrand][k] !== v) it.params.hingeBrand = 'custom';
   clearTimeout(formTimer);
   if (el.tagName === 'SELECT') update({ form: true });
   else formTimer = setTimeout(() => update(), 250);
@@ -355,10 +366,11 @@ $('#btnAddCustom').onclick = () => {
 };
 function csv() {
   const S = project.settings;
-  const rows = [['№', 'Изделие', 'Деталь', 'Материал', 'Толщина', 'Длина', 'Ширина', 'Кол-во', 'Кромка Д1', 'Кромка Д2', 'Кромка Ш1', 'Кромка Ш2', 'Пильная длина', 'Пильная ширина', 'Отверстий']];
+  const rows = [['№', 'Изделие', 'Деталь', 'Материал', 'Толщина', 'Длина', 'Ширина', 'Кол-во', 'Кромка Д1', 'Кромка Д2', 'Кромка Ш1', 'Кромка Ш2', 'Пильная длина', 'Пильная ширина', 'Отверстий', 'Паз']];
   for (const g of built.groups) {
     const p = g.rep, cs = C.cutSize(p, S);
-    rows.push([g.no, p.item, p.name, p.material, p.T, p.L, p.W, g.qty, p.edges.L1, p.edges.L2, p.edges.W1, p.edges.W2, cs.L, cs.W, p.holes.length]);
+    rows.push([g.no, p.item, p.name, p.material, p.T, p.L, p.W, g.qty, p.edges.L1, p.edges.L2, p.edges.W1, p.edges.W2, cs.L, cs.W, p.holes.length,
+      (p.grooves || []).map(q => `паз ${q.w}x${q.depth} пласть ${q.face}, ${q.pos} от ${q.axis === 'y' ? 'Ш1' : 'Д1'}`).join('; ')]);
   }
   return '﻿' + rows.map(r => r.map(v => {
     const s = typeof v === 'number' ? String(v).replace('.', ',') : String(v);
@@ -403,6 +415,14 @@ function drawSVG(p, VW = 900, VH = 600) {
       o += `<rect class="h-e" x="${rx}" y="${ry}" width="${rw}" height="${rh}"/>`;
     }
   }
+  for (const gq of p.grooves || []) {
+    const [gx, gy, gw, gh] = gq.axis === 'y' ? [X(gq.pos), Y(gq.to), gq.w * s, (gq.to - gq.from) * s] : [X(gq.from), Y(gq.pos + gq.w), (gq.to - gq.from) * s, gq.w * s];
+    o += `<rect class="groove${gq.face === 'B' ? ' b' : ''}" x="${gx}" y="${gy}" width="${Math.max(gw, 2)}" height="${Math.max(gh, 2)}"/>`;
+    const lab = `паз ${fmt(gq.w)}×${fmt(gq.depth)}, пласть ${gq.face}, отступ ${fmt(gq.pos)}`;
+    o += gq.axis === 'y'
+      ? `<text class="glab" transform="translate(${gx + gw + 26},${Y((gq.from + gq.to) / 2)}) rotate(-90)" text-anchor="middle">${lab}</text>`
+      : `<text class="glab" x="${X((gq.from + gq.to) / 2)}" y="${gy - 4}" text-anchor="middle">${lab}</text>`;
+  }
   // габаритные размеры
   const by = y0 + ph + 48, lx = x0 - 48;
   o += `<path class="dim" d="M${X(0)},${y0 + ph + 6}V${by + 6}M${X(p.L)},${y0 + ph + 6}V${by + 6}M${X(0)},${by}H${X(p.L)}"/>`;
@@ -426,6 +446,9 @@ function drawSVG(p, VW = 900, VH = 600) {
   });
   o += `<circle cx="${X(0)}" cy="${Y(0)}" r="3.5" fill="#1d6fd1"/><text x="${X(0) - 6}" y="${Y(0) + 15}" font-size="11" fill="#1d6fd1" text-anchor="end">0,0</text>`;
   return o + '</svg>';
+}
+function grooveRows(p) {
+  return (p.grooves || []).map(g => `<tr class="grv"><td></td><td>Паз под заднюю стенку</td><td>Пласть ${g.face}</td><td colspan="2">${g.axis === 'y' ? `X ${fmt(g.pos)}…${fmt(g.pos + g.w)}, по Y ${fmt(g.from)}…${fmt(g.to)}` : `Y ${fmt(g.pos)}…${fmt(g.pos + g.w)}, по X ${fmt(g.from)}…${fmt(g.to)}`}</td><td>шир. ${fmt(g.w)}</td><td>${fmt(g.depth)}</td><td></td></tr>`).join('');
 }
 function holeRows(p) {
   const hs = [...p.holes].sort((a, b) => (a.face || a.edge).localeCompare(b.face || b.edge) || a.x - b.x || a.y - b.y);
@@ -451,7 +474,7 @@ function renderDraw() {
   $('#drawing').innerHTML = drawSVG(p);
   $('#eL').value = p.L; $('#eW').value = p.W;
   $('#btnResetSize').disabled = !p.resized; $('#btnExclude').textContent = p.role === 'custom' ? 'Удалить деталь' : 'Исключить деталь';
-  $('#holesTbl').innerHTML = p.holes.length ? holeHead + '<tbody>' + holeRows(p) + '</tbody>' : '<tr><td class="muted">Отверстий нет</td></tr>';
+  $('#holesTbl').innerHTML = p.holes.length || p.grooves?.length ? holeHead + '<tbody>' + holeRows(p) + grooveRows(p) + '</tbody>' : '<tr><td class="muted">Отверстий нет</td></tr>';
 }
 $('#drawList').addEventListener('click', e => {
   const d = e.target.closest('.dl'); if (d) { sel.uid = d.dataset.uid; renderDraw(); }
@@ -741,7 +764,7 @@ function buildPrint() {
   for (const g of built.groups) {
     const p = g.rep;
     h += `<div class="pr-page"><h2>№${g.no} ${esc(p.name)} — ${fmt(p.L)}×${fmt(p.W)}×${p.T} мм, ${g.qty} шт</h2><p>${esc(p.item)} · ${esc(p.material)} · Кромка: Д1 ${p.edges.L1 || '—'}, Д2 ${p.edges.L2 || '—'}, Ш1 ${p.edges.W1 || '—'}, Ш2 ${p.edges.W2 || '—'} · Вид со стороны пласти A, отсчёт от 0,0</p>
-      ${drawSVG(p)}${p.holes.length ? `<table class="tbl small">${holeHead}<tbody>${holeRows(p)}</tbody></table>` : ''}</div>`;
+      ${drawSVG(p)}${p.holes.length || p.grooves?.length ? `<table class="tbl small">${holeHead}<tbody>${holeRows(p)}${grooveRows(p)}</tbody></table>` : ''}</div>`;
   }
   for (const m of C.nest(built, S)) m.sheets.forEach((sh, i) => {
     h += `<div class="pr-page"><h2>Раскрой: ${esc(m.mat)} — лист ${i + 1} из ${m.sheets.length} (загрузка ${Math.round(sh.util * 100)}%)</h2>${sheetSVG(sh, S)}</div>`;

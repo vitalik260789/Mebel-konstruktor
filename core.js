@@ -18,12 +18,27 @@ export const HW = {
   pinD: 5, pinDepth: 12, pinFront: 37, pinBack: 37, pinBelow: 5,
   cupD: 35, cupDepth: 13, cupOffset: 21.5, hingeEnd: 100,
   plateFront: 37, plateSpacing: 32, plateD: 5, plateDepth: 12,
-  handleD: 5, boxConfEnd: 30,
+  handleD: 5, boxConfEnd: 30, camDist: 34, camD: 15, stemEdgeD: 8, stemFaceD: 5, stemFaceDepth: 11, dowelD: 8, dowelEdgeDepth: 30,
 };
+
+// Петли: центр чашки от края двери и глубина чашки (проверь по каталогу своей петли)
+export const HINGES = {
+  std: { label: 'Стандартная (Boyard, GTV, Китай)', cupOffset: 21.5, cupDepth: 12 },
+  blum: { label: 'Blum Clip top', cupOffset: 21.5, cupDepth: 13 },
+  hettich: { label: 'Hettich Sensys', cupOffset: 22, cupDepth: 13.5 },
+  hafele: { label: 'Häfele Metalla', cupOffset: 22.5, cupDepth: 12 },
+};
+// Направляющие: зазор на сторону, короб ниже фасада на boxMinus, доступные длины
+export const RUNNERS = {
+  roller: { label: 'Роликовые', gap: 13, boxMinus: 50, lens: [650, 600, 550, 500, 450, 400, 350, 300, 250] },
+  ball: { label: 'Шариковые полного выдвижения', gap: 13, boxMinus: 40, lens: [600, 550, 500, 450, 400, 350, 300, 250] },
+  hidden: { label: 'Скрытого монтажа (Blum Tandem, Hettich Quadro)', gap: 5, boxMinus: 60, lens: [600, 550, 500, 450, 400, 350, 300, 270] },
+};
+export const JOINTS = { conf: 'Конфирматы 7×50', minifix: 'Эксцентрики (минификс) + шканты', dowel: 'Шканты 8×30 (на клей)' };
 
 export const HOLE_TYPES = {
   conf: 'Конфирмат', pin: 'Полкодержатель', cup: 'Петля (чашка)', plate: 'Планка петли',
-  handle: 'Ручка', user: 'Доп. отверстие',
+  handle: 'Ручка', user: 'Доп. отверстие', cam: 'Эксцентрик (корпус)', stem: 'Шток эксцентрика', dowel: 'Шкант',
 };
 
 export const EDGE_NAMES = { L1: 'Д1', L2: 'Д2', W1: 'Ш1', W2: 'Ш2' };
@@ -64,7 +79,8 @@ const BASE = {
   type: 'cabinet', t: 16, matCorpus: 'ЛДСП Белый', frontT: 16, matFront: 'ЛДСП Дуб Сонома',
   backType: 'overlay', backT: 3, matBack: 'ХДФ Белый', topType: 'overlay', base: 'plinth',
   plinthH: 60, plinthSetback: 40, legsH: 100, shelfType: 'pins', shelfRecess: 10, gap: 3, gapEdge: 1.5,
-  handle: 96, edgeFront: 2, edgeOther: 0.4, edgeFacade: 2, runnerGap: 13,
+  handle: 96, edgeFront: 2, edgeOther: 0.4, edgeFacade: 2,
+  joint: 'conf', hingeBrand: 'std', cupOffset: 21.5, cupDepth: 12, hingeEnd: 100, runner: 'roller', grooveOff: 10, grooveDepth: 8,
 };
 
 // Блок наполнения секции (сверху вниз): type: drawers | doors | open; h — высота зоны по фасаду (0 = авто);
@@ -157,9 +173,12 @@ export function spots(len, end, step) {
 function hingeCount(h) { return h <= 900 ? 2 : h <= 1600 ? 3 : h <= 2000 ? 4 : 5; }
 
 // Генерация корпусного изделия по параметрам
-export function generate(P0, hw = HW) {
+export function generate(P0, hw0 = HW) {
   const P = normalizeParams(P0);
   const num = k => Number(P[k]) || 0;
+  const hw = { ...hw0, cupOffset: num('cupOffset') || hw0.cupOffset, cupDepth: num('cupDepth') || hw0.cupDepth, hingeEnd: num('hingeEnd') || hw0.hingeEnd };
+  const RUN = RUNNERS[P.runner] || RUNNERS.roller;
+  const SYS = JOINTS[P.joint] ? P.joint : 'conf';
   const t = num('t'), W = num('W'), H = num('H'), D = num('D');
   const warn = [], parts = [];
   const add = p => (parts.push(p), p);
@@ -180,6 +199,8 @@ export function generate(P0, hw = HW) {
   const innerY0 = bottomY + t;
   const innerY1 = overlayTop ? baseY + sideH : topOuter - t;
   const backT = num('backT');
+  const groove = P.backType === 'groove', gOff = num('grooveOff'), gD = num('grooveDepth');
+  const zB = groove ? r(gOff + backT + 1) : 0; // внутренние детали начинаются за пазом
 
   const conf = (face, edgeP, w) => {
     const le = toLocal(edgeP, w), edge = edgeOf(edgeP, le);
@@ -188,13 +209,40 @@ export function generate(P0, hw = HW) {
     const lf = toLocal(face, w);
     face.holes.push({ type: 'conf', face: contactFace(face, lf) === 'B' ? 'A' : 'B', x: r(lf.x), y: r(lf.y), d: hw.confFaceD, depth: face.T, through: true });
   };
+  // Пласть, смотрящая внутрь изделия (туда прячем корпуса эксцентриков)
+  const cen = [W / 2, (baseY + topOuter) / 2, D / 2];
+  const innerFace = p => { const m = ORIENT[p.orient], o = [p.ox, p.oy, p.oz][m.z]; return cen[m.z] >= o + p.T / 2 ? 'A' : 'B'; };
+  const camAt = (face, edgeP, w) => {
+    const le = toLocal(edgeP, w), edge = edgeOf(edgeP, le);
+    if (!edge) return;
+    const cd = hw.camDist, c = { ...le };
+    if (edge === 'W1') c.x += cd; if (edge === 'W2') c.x -= cd; if (edge === 'L1') c.y += cd; if (edge === 'L2') c.y -= cd;
+    edgeP.holes.push({ type: 'stem', edge, x: r(le.x), y: r(le.y), d: hw.stemEdgeD, depth: cd });
+    edgeP.holes.push({ type: 'cam', face: innerFace(edgeP), x: r(c.x), y: r(c.y), d: hw.camD, depth: edgeP.T <= 16 ? 12.5 : 13.5 });
+    const lf = toLocal(face, w);
+    face.holes.push({ type: 'stem', face: contactFace(face, lf), x: r(lf.x), y: r(lf.y), d: hw.stemFaceD, depth: hw.stemFaceDepth });
+  };
+  const dowelAt = (face, edgeP, w) => {
+    const le = toLocal(edgeP, w), edge = edgeOf(edgeP, le);
+    if (!edge) return;
+    edgeP.holes.push({ type: 'dowel', edge, x: r(le.x), y: r(le.y), d: hw.dowelD, depth: hw.dowelEdgeDepth });
+    const lf = toLocal(face, w);
+    face.holes.push({ type: 'dowel', face: contactFace(face, lf), x: r(lf.x), y: r(lf.y), d: hw.dowelD, depth: Math.min(12, face.T - 4) });
+  };
+  // Соединение корпусных деталей выбранной системой; partner — точка для парного шканта у эксцентрика
+  const joint = (face, edgeP, w, partner) => {
+    if (SYS === 'minifix') { camAt(face, edgeP, w); if (partner) dowelAt(face, edgeP, partner); }
+    else if (SYS === 'dowel') dowelAt(face, edgeP, w);
+    else conf(face, edgeP, w);
+  };
+  const pair = (o, len) => (o <= len / 2 ? o + 32 : o - 32);
   const faceHole = (p, w, h) => {
     const l = toLocal(p, w);
     p.holes.push({ ...h, face: contactFace(p, l), x: r(l.x), y: r(l.y) });
   };
 
   // Боковины
-  const sideEdges = { W2: eF, L2: overlayTop ? 0 : eO, L1: 0, W1: P.backType === 'none' ? eO : 0 };
+  const sideEdges = { W2: eF, L2: overlayTop ? 0 : eO, L1: 0, W1: P.backType === 'overlay' ? 0 : eO };
   const sideL = add(panel('sideL', 'Боковина левая', 'S', [0, baseY, 0], D, sideH, t, C, 'corpus', sideEdges));
   const sideR = add(panel('sideR', 'Боковина правая', 'S', [W - t, baseY, 0], D, sideH, t, C, 'corpus', sideEdges));
 
@@ -211,9 +259,9 @@ export function generate(P0, hw = HW) {
         const Y = h.oy + h.T / 2;
         let z = h.oz + o;
         const sh = SHIFTS.find(dz => { const zz = z + dz; return zz > h.oz + 20 && zz < h.oz + h.W - 20 && !clash(side.panel, [side.X, Y, zz], hw.confFaceD); });
-        if (sh === undefined) warn.push(`${h.name}: конфирмат пересекается с другим отверстием.`);
+        if (sh === undefined) warn.push(`${h.name}: крепёж пересекается с другим отверстием.`);
         z += sh || 0;
-        conf(side.panel, h, [side.X, Y, z]);
+        joint(side.panel, h, [side.X, Y, z], [side.X, Y, h.oz + pair(z - h.oz, h.W)]);
       }
     }
   };
@@ -224,8 +272,8 @@ export function generate(P0, hw = HW) {
   if (overlayTop) {
     top = add(panel('top', 'Крышка', 'H', [0, baseY + sideH, 0], W, D, t, C, 'corpus', { L2: eF, W1: eF, W2: eF, L1: eO }));
     for (const o of spots(D, hw.confEnd, hw.confStep)) {
-      conf(top, sideL, [t / 2, top.oy, o]);
-      conf(top, sideR, [W - t / 2, top.oy, o]);
+      joint(top, sideL, [t / 2, top.oy, o], [t / 2, top.oy, pair(o, D)]);
+      joint(top, sideR, [W - t / 2, top.oy, o], [W - t / 2, top.oy, pair(o, D)]);
     }
   } else {
     top = add(panel('top', 'Крышка', 'H', [t, topOuter - t, 0], innerW, D, t, C, 'corpus', { L2: eF }));
@@ -241,15 +289,22 @@ export function generate(P0, hw = HW) {
     const pl = add(panel('plinth', 'Цоколь', 'F', [t, 0, D - num('plinthSetback') - t], innerW, plinth, t, C, 'corpus'));
     const offs = plinth <= 100 ? [plinth / 2] : spots(plinth, 30, 400);
     for (const o of offs) {
-      conf(sideL, pl, [t, o, pl.oz + t / 2]);
-      conf(sideR, pl, [W - t, o, pl.oz + t / 2]);
+      joint(sideL, pl, [t, o, pl.oz + t / 2], null);
+      joint(sideR, pl, [W - t, o, pl.oz + t / 2], null);
     }
-    for (const o of spots(innerW, 80, 400)) conf(parts.find(p => p.id === 'bottom'), pl, [t + o, bottomY, pl.oz + t / 2]);
+    for (const o of spots(innerW, 80, 400)) joint(bottom, pl, [t + o, bottomY, pl.oz + t / 2], [t + pair(o, innerW), bottomY, pl.oz + t / 2]);
   }
 
   // Задняя стенка
   if (P.backType === 'overlay') {
     add(panel('back', 'Задняя стенка', 'F', [2, bottomY + 2, -backT], W - 4, topOuter - bottomY - 4, backT, P.matBack, 'back'));
+  } else if (groove) {
+    const gw = r(backT + 1);
+    const gr = (p, axis, from, to) => (p.grooves = p.grooves || []).push({ face: innerFace(p), axis, pos: gOff, w: gw, depth: gD, from: r(from), to: r(to) });
+    gr(sideL, 'y', 0, sideL.W); gr(sideR, 'y', 0, sideR.W);
+    gr(bottom, 'x', 0, bottom.L);
+    if (overlayTop) gr(top, 'x', t - gD + 1, W - t + gD - 1); else gr(top, 'x', 0, top.L);
+    add(panel('back', 'Задняя стенка (в паз)', 'F', [t - gD + 1, innerY0 - gD + 1, gOff + 0.5], innerW + 2 * (gD - 1), innerY1 - innerY0 + 2 * (gD - 1), backT, P.matBack, 'back'));
   }
 
   // ---------- Секции, фасады, наполнение ----------
@@ -271,10 +326,11 @@ export function generate(P0, hw = HW) {
     const se = { x0: x, x1: x + w, w, def: secs[i] };
     x += w;
     if (i < ns - 1) {
-      const pt = add(panel(`part${i + 1}`, 'Перегородка вертикальная', 'S', [x, innerY0, 0], D, innerY1 - innerY0, t, C, 'corpus', { W2: eF }));
-      for (const o of spots(D, hw.confEnd, hw.confStep)) {
-        conf(bottom, pt, [x + t / 2, innerY0, o]);
-        conf(top, pt, [x + t / 2, innerY1, o]);
+      const pt = add(panel(`part${i + 1}`, 'Перегородка вертикальная', 'S', [x, innerY0, zB], D - zB, innerY1 - innerY0, t, C, 'corpus', { W2: eF }));
+      for (const o of spots(D - zB, hw.confEnd, hw.confStep)) {
+        const z = zB + o, z2 = zB + pair(o, D - zB);
+        joint(bottom, pt, [x + t / 2, innerY0, z], [x + t / 2, innerY0, z2]);
+        joint(top, pt, [x + t / 2, innerY1, z], [x + t / 2, innerY1, z2]);
       }
       se.partR = pt;
       x += t;
@@ -306,15 +362,15 @@ export function generate(P0, hw = HW) {
       if (n > 0 && clear < 80) warn.push('Полки стоят слишком часто (просвет < 80 мм).');
       ys = Array.from({ length: n }, (_, i) => y0 + clear * (i + 1) + t * i);
     }
-    const sd = D - num('shelfRecess');
+    const sd = D - num('shelfRecess') - zB;
     ys.forEach((sy, i) => {
       sy = r(sy);
       if (sy < y0 + 20 || sy + t > y1 - 20) { warn.push(`Полка на высоте ${r(sy - y0)} мм выходит за пределы ниши (0…${r(y1 - y0 - t)}).`); return; }
       if (P.shelfType === 'fixed') {
-        joinBetween(add(panel(`${pref}sh${i + 1}`, 'Полка', 'H', [se.x0, sy, 0], se.w, sd, t, C, 'corpus', { L2: eF })), se.left, se.right);
+        joinBetween(add(panel(`${pref}sh${i + 1}`, 'Полка', 'H', [se.x0, sy, zB], se.w, sd, t, C, 'corpus', { L2: eF })), se.left, se.right);
       } else {
-        add(panel(`${pref}sh${i + 1}`, 'Полка', 'H', [se.x0 + 1, sy, 0], se.w - 2, sd, t, C, 'corpus', { L2: eF }));
-        for (const side of [se.left, se.right]) for (const Z of [D - hw.pinFront, hw.pinBack]) pinHole(side, [side.X, sy - hw.pinBelow, Z]);
+        add(panel(`${pref}sh${i + 1}`, 'Полка', 'H', [se.x0 + 1, sy, zB], se.w - 2, sd, t, C, 'corpus', { L2: eF }));
+        for (const side of [se.left, se.right]) for (const Z of [D - hw.pinFront, zB + hw.pinBack]) pinHole(side, [side.X, sy - hw.pinBelow, Z]);
       }
     });
   };
@@ -322,12 +378,11 @@ export function generate(P0, hw = HW) {
   const makeDrawer = (se, id, fy, fh, zoneBot) => {
     const fxw = se.fxR - se.fxL;
     const f = add(panel(`${id}f`, 'Фасад ящика', 'F', [se.fxL, fy, D], fxw, fh, fT, P.matFront, 'front', { L1: eFac, L2: eFac, W1: eFac, W2: eFac }));
-    const lens = [650, 600, 550, 500, 450, 400, 350, 300, 250];
-    runnerLen = lens.find(l => l <= D - 10) || 0;
+    runnerLen = RUN.lens.find(l => l <= D - zB - 10) || 0;
     if (!runnerLen) { warn.push(`Глубина ${D} мм мала для направляющих (мин. 260).`); return; }
-    const rg = num('runnerGap'), bt = t, x0 = se.x0 + rg, bw = se.w - 2 * rg;
+    const rg = RUN.gap, bt = t, x0 = se.x0 + rg, bw = se.w - 2 * rg;
     if (bw < 100) { warn.push('Секция слишком узкая для ящика.'); return; }
-    let bh = Math.floor(fh - 50);
+    let bh = Math.floor(fh - RUN.boxMinus);
     if (bh < 60) { warn.push(`Фасад ящика ${r(fh)} мм слишком низкий, высота короба принята 60 мм.`); bh = 60; }
     const by = Math.max(fy + 25, zoneBot + 5);
     const z0 = D - 2 - runnerLen;
@@ -413,7 +468,7 @@ export function generate(P0, hw = HW) {
       const nx = Z[j + 1], center = z.fyBot - g / 2;
       if (z.b.type === 'drawers' && nx.b.type === 'drawers') { z.bot = center; z.botBound = center; }
       else {
-        const dv = add(panel(`s${i + 1}dv${j + 1}`, 'Полка-перегородка', 'H', [se.x0, r(center - t / 2), 0], se.w, D, t, C, 'corpus', { L2: eF }));
+        const dv = add(panel(`s${i + 1}dv${j + 1}`, 'Полка-перегородка', 'H', [se.x0, r(center - t / 2), zB], se.w, D - zB, t, C, 'corpus', { L2: eF }));
         joinBetween(dv, se.left, se.right);
         z.bot = dv.oy + t; z.botBound = dv.oy;
       }
@@ -435,7 +490,7 @@ export function generate(P0, hw = HW) {
   return {
     parts, warn,
     dims: { W, H: topOuter, D: D + (P.backType === 'overlay' ? backT : 0) + (parts.some(p => p.role === 'front') ? fT : 0) },
-    extra: { secInfo: S.map(se => ({ w: r(se.w), blocks: (se.zones || []).map(z => r(z.h)) })), drawers: drawerCount, runnerLen, legs, legsH: baseY, handle, hingesFull, hingesHalf },
+    extra: { joint: SYS, runnerLabel: RUN.label, hingeLabel: (HINGES[P.hingeBrand] || {}).label || 'своя', secInfo: S.map(se => ({ w: r(se.w), blocks: (se.zones || []).map(z => r(z.h)) })), drawers: drawerCount, runnerLen, legs, legsH: baseY, handle, hingesFull, hingesHalf },
   };
 }
 
@@ -492,7 +547,7 @@ export function buildProject(proj) {
 export function groupParts(parts) {
   const map = new Map();
   for (const p of parts) {
-    const key = [p.item, p.name, p.material, p.T, p.L, p.W, JSON.stringify(p.edges), holeSig(p)].join('§');
+    const key = [p.item, p.name, p.material, p.T, p.L, p.W, JSON.stringify(p.edges), holeSig(p), JSON.stringify(p.grooves || [])].join('§');
     if (!map.has(key)) map.set(key, { key, rep: p, parts: [], qty: 0 });
     const g = map.get(key);
     g.parts.push(p);
@@ -517,7 +572,7 @@ export const matKey = p => `${p.material} ${p.T} мм`;
 // Итоги: площадь плиты, кромка, фурнитура
 export function summary(built, proj) {
   const area = {}, edge = {};
-  let conf = 0, pins = 0, cups = 0, handles = 0, backScrews = 0;
+  let conf = 0, pins = 0, cups = 0, handles = 0, backScrews = 0, cams = 0, dowels = 0;
   for (const g of built.groups) {
     const p = g.rep, q = g.qty, k = matKey(p);
     area[k] = (area[k] || 0) + (p.L * p.W * q) / 1e6;
@@ -527,23 +582,28 @@ export function summary(built, proj) {
     }
     for (const h of p.holes) {
       if (h.type === 'conf' && h.face) conf += q;
+      if (h.type === 'cam') cams += q;
+      if (h.type === 'dowel' && h.face) dowels += q;
       if (h.type === 'pin') pins += q;
       if (h.type === 'cup') cups += q;
       if (h.type === 'handle' && p.role === 'front') handles += q / 2;
     }
-    if (p.role === 'back') backScrews += Math.ceil((2 * (p.L + p.W)) / 150) * q;
+    if (p.role === 'back' && !/в паз/.test(p.name)) backScrews += Math.ceil((2 * (p.L + p.W)) / 150) * q;
   }
   const hw = [];
   if (conf) hw.push(['Конфирмат 7×50 (+ заглушки)', conf, 'шт']);
+  if (cams) hw.push(['Эксцентрик (минификс) Ø15 + шток', cams, 'шт']);
+  if (dowels) hw.push(['Шкант 8×30 (+ клей ПВА)', dowels, 'шт']);
   if (pins) hw.push(['Полкодержатель 5 мм', pins, 'шт']);
   const hf = built.items.reduce((a, g) => a + (g.extra?.hingesFull || 0), 0);
   const hh = built.items.reduce((a, g) => a + (g.extra?.hingesHalf || 0), 0);
-  if (hf) hw.push(['Петля накладная 110° с ответной планкой', hf, 'шт']);
-  if (hh) hw.push(['Петля полунакладная 110° (двери на средней перегородке)', hh, 'шт']);
+  const hl = [...new Set(built.items.filter(g => g.extra?.hingesFull || g.extra?.hingesHalf).map(g => g.extra.hingeLabel))].join(', ');
+  if (hf) hw.push([`Петля накладная 110° с ответной планкой — ${hl}`, hf, 'шт']);
+  if (hh) hw.push([`Петля полунакладная 110° (двери на средней перегородке) — ${hl}`, hh, 'шт']);
   if (cups) hw.push(['Шуруп 3,5×16 для петель и планок', cups * 4, 'шт']);
   built.items.forEach((g, i) => {
     const name = proj.items[i].params.name;
-    if (g.extra?.drawers) hw.push([`Направляющие роликовые L=${g.extra.runnerLen} (${name})`, g.extra.drawers, 'пар']);
+    if (g.extra?.drawers) hw.push([`Направляющие ${g.extra.runnerLabel}, L=${g.extra.runnerLen} (${name})`, g.extra.drawers, 'пар']);
     if (g.extra?.legs) hw.push([`Ножки мебельные H=${g.extra.legsH} (${name})`, g.extra.legs, 'шт']);
   });
   if (handles) hw.push(['Ручка (межосевое по проекту) + винты М4', handles, 'шт']);
@@ -618,6 +678,11 @@ export function toDXF(groups) {
     line('CONTOUR', ox, 0, ox + p.L, 0); line('CONTOUR', ox + p.L, 0, ox + p.L, p.W);
     line('CONTOUR', ox + p.L, p.W, ox, p.W); line('CONTOUR', ox, p.W, ox, 0);
     text('TEXT', ox, -40, 20, `N${g.no} ${p.L}x${p.W}x${p.T} qty ${g.qty}`);
+    for (const gq of p.grooves || []) {
+      const l = `GROOVE_${gq.face}_${gq.w}x${gq.depth}`;
+      if (gq.axis === 'y') { line(l, ox + gq.pos, gq.from, ox + gq.pos, gq.to); line(l, ox + gq.pos + gq.w, gq.from, ox + gq.pos + gq.w, gq.to); }
+      else { line(l, ox + gq.from, gq.pos, ox + gq.to, gq.pos); line(l, ox + gq.from, gq.pos + gq.w, ox + gq.to, gq.pos + gq.w); }
+    }
     for (const h of p.holes) {
       if (h.face) circle(`${h.face}_D${h.d}_${h.through ? 'THRU' : 'H' + h.depth}`, ox + h.x, h.y, h.d / 2);
       else {
