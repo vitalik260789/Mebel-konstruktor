@@ -22,7 +22,7 @@
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Мебель-Конструктор — проектирование корпусной мебели">
 <meta name="twitter:image" content="https://vitalik260789.github.io/Mebel-konstruktor/icons/og-image.png">
-<link rel="stylesheet" href="style.css?v=202611121120">
+<link rel="stylesheet" href="style.css?v=202611122235">
 <script type="importmap">
 { "imports": {
   "three": "./vendor/three.module.js",
@@ -202,13 +202,14 @@
 
     <section class="tab" id="tab-cost" hidden>
       <div class="bar wrap">
-        <label>Валюта<select id="curSel"><option>Ft</option><option>€</option><option>₽</option><option>BYN</option><option>$</option></select></label>
+        <label>Цены<select id="supSel"></select></label>
+        <label>Валюта<select id="curSel"><option>BYN</option><option>Ft</option><option>€</option><option>₽</option><option>$</option></select></label>
         <label>Наценка, %<input id="markup" type="number" min="0"></label>
         <label class="chk"><input type="checkbox" id="byArea"> Плиту считать по площади (+15% на отход), а не целыми листами</label>
         <span class="grow"></span>
         <button id="btnCostCSV">Скачать смету CSV</button>
       </div>
-      <p class="muted">Впиши свои цены — они сохраняются в проекте и запоминаются в браузере для следующих проектов. Количество листов берётся из раскроя.</p>
+      <p class="muted" id="costNote"></p>
       <div id="costOut"></div>
     </section>
 
@@ -226,7 +227,7 @@
           <li><b>Раскрой.</b> Гильотинная раскладка на листы (подходит для форматно-раскроечного станка) с учётом пропила и обзола.</li>
           <li><b>Кухня.</b> Шаблоны нижних модулей (с дверью, с ящиками, под мойку) и верхнего навесного. Вместо крышки — царги, сверху столешница (в раскрой не идёт, в смете — погонными метрами). Ставь модули отдельными изделиями в одном проекте — раскрой и смета посчитаются на всю кухню.</li>
           <li><b>Шкаф-купе.</b> Раздвижные двери считаются по проёму (размер двери, направляющие, ролики), полки и перегородки укорачиваются на зону под двери, ящики делаются внутренними (вкладной фасад, без ручек).</li>
-          <li><b>Смета.</b> Вкладка «Смета»: впиши цены листов, кромки, распила, присадки и фурнитуры — получишь себестоимость и цену с наценкой. Цены запоминаются для следующих проектов.</li>
+          <li><b>Смета и цена.</b> По умолчанию подставлен прайс HLZ / Хольцгрупп (Минск, BYN): плиты Egger, кромка, распил, кромкование, присадка, пазы и фурнитура GTV. Примерная цена видна у каждого изделия в списке слева и под 3D-видом. Во вкладке «Смета» любую цену можно заменить своей. Чтобы цена считалась, выбирай материалы из групп «HLZ ·…».</li>
           <li><b>Выгрузка для распила.</b> «Формат выгрузки…» во вкладке «Детали»: готовые шаблоны (в т.ч. венгерский для lapszabászat) или свои колонки.</li>
           <li><b>Отмена.</b> Кнопки ↶ ↷ в шапке или Ctrl+Z / Ctrl+Shift+Z — до 100 шагов назад.</li>
           <li><b>Схема сборки.</b> В 3D галочка «Номера» показывает № деталей (как в спецификации). Кнопка «Схема сборки» печатает разнесённый вид с номерами и порядок сборки изделия.</li>
@@ -255,6 +256,6 @@
 <div id="modal" class="modal" hidden><div class="modal-c"><div id="modalBody"></div><div class="modal-a"><button id="modalClose">Закрыть</button></div></div></div>
 <div id="toast" class="toast" hidden></div>
 <div id="print"></div>
-<script type="module" src="app.js?v=202611121120"></script>
+<script type="module" src="app.js?v=202611122235"></script>
 </body>
 </html>

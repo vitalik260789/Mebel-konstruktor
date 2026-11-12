@@ -1,4 +1,5 @@
-import * as C from './core.js?v=202611121120';
+import * as C from './core.js?v=202611122235';
+import * as HLZ from './supplier-hlz.js?v=202611122235';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -10,7 +11,7 @@ let project, built;
 const sel = { item: 0, uid: null, tab: '3d' };
 
 // ---------- Проект ----------
-const mkItem = tpl => ({ params: structuredClone(C.TEMPLATES[tpl].params), overrides: {} });
+const mkItem = tpl => { const params = structuredClone(C.TEMPLATES[tpl].params); for (const k of ['matCorpus', 'matFront', 'matBack']) fitThickness(params, k); return { params, overrides: {} }; };
 const newProject = () => ({ name: 'Мой проект', items: [mkItem('nightstand')], custom: [], settings: { ...C.DEFAULT_SETTINGS } });
 function normalize(p) {
   p.items = p.items || []; p.custom = p.custom || [];
@@ -18,6 +19,9 @@ function normalize(p) {
   p.items.forEach(it => {
     it.overrides = it.overrides || {};
     it.params = C.normalizeParams(it.params);
+    // старые названия материалов из шаблонов → позиции каталога HLZ
+    const MAP = { 'ЛДСП Белый': 'ЛДСП Egger W960 Белый классический', 'ЛДСП Дуб Сонома': 'ЛДСП Egger H1145 Дуб Бардолино натуральный', 'ХДФ Белый': 'ХДФ лакированная белая' };
+    for (const k of ['matCorpus', 'matFront', 'matBack']) if (MAP[it.params[k]]) { it.params[k] = MAP[it.params[k]]; fitThickness(it.params, k); }
     for (const k of ['layout', 'doors', 'hingeSide', 'drawers', 'drawerFrontH', 'shelves']) delete it.params[k];
   });
   return p;
@@ -100,7 +104,7 @@ function renderItems() {
   $('#items').innerHTML = project.items.map((it, i) => {
     const p = it.params, d = built.items[i]?.dims || {};
     return `<div class="item ${i === sel.item ? 'on' : ''}" data-i="${i}">
-      <span class="nm">${esc(p.name)}</span><span class="sz">${d.W}×${d.H}×${d.D}</span>
+      <span class="nm">${esc(p.name)}<span class="pr">≈ ${money(itemEstimate(i).total)}</span></span><span class="sz">${d.W}×${d.H}×${d.D}</span>
       <button data-dup="${i}" title="Дублировать">⧉</button><button data-del="${i}" title="Удалить">✕</button></div>`;
   }).join('') || '<p class="muted">Нет изделий — добавь из шаблона ниже.</p>';
   $('#itemTitle').textContent = project.items[sel.item] ? '— ' + project.items[sel.item].params.name : '';
@@ -261,11 +265,13 @@ function renderForm() {
       let ctl;
       if (type === 'mat') ctl = matSelect(id, k, p[k], opt);
       else if (type === 'thk') {
-        const list = [...new Set([...C.THICKNESSES[opt], Number(p[k])])].sort((a, b) => a - b);
+        const sm = HLZ.hlzMaterial(p[THK_MAT[k]]);
+        const base = sm ? Object.keys(sm.prices).map(Number) : C.THICKNESSES[opt];
+        const list = [...new Set([...base, Number(p[k])])].sort((a, b) => a - b);
         ctl = `<select id="${id}" data-k="${k}">${list.map(v => `<option value="${v}" ${Number(p[k]) === v ? 'selected' : ''}>${v} мм</option>`).join('')}</select>`;
       } else if (type === 'sel') ctl = `<select id="${id}" data-k="${k}">${opt.map(([v, l]) => `<option value="${v}" ${String(p[k]) === String(v) ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
       else ctl = `<input id="${id}" data-k="${k}" ${type === 'num' ? 'type="number" step="any"' : ''} value="${esc(p[k])}">`;
-      return `<div class="fr"><label for="${id}">${label}</label>${ctl}</div>`;
+      return `<div class="fr${type === 'mat' ? ' wide' : ''}"><label for="${id}">${label}</label>${ctl}</div>`;
     }).join('');
     return rows ? `<fieldset><legend>${g}</legend>${rows}</fieldset>` : '';
   });
@@ -273,7 +279,16 @@ function renderForm() {
   $('#form').innerHTML = FS.join('');
 }
 // ---------- Материалы ----------
-const allMaterials = () => [...C.MATERIALS, ...(project.materials || []).map(m => ({ ...m, group: 'Мои материалы' }))];
+const THK_MAT = { t: 'matCorpus', frontT: 'matFront', backT: 'matBack' };
+const MAT_THK = { matCorpus: 't', matFront: 'frontT', matBack: 'backT' };
+// При выборе материала поставщика ставим толщину, которая у него есть
+function fitThickness(params, matKey) {
+  const sm = HLZ.hlzMaterial(params[matKey]), tk = MAT_THK[matKey];
+  if (!sm || !tk || sm.prices[params[tk]]) return;
+  const ts = Object.keys(sm.prices).map(Number);
+  params[tk] = [18, 16, 3].find(v => ts.includes(v)) || ts[0];
+}
+const allMaterials = () => [...HLZ.HLZ_MATERIALS, ...C.MATERIALS.map(m => ({ ...m, group: 'Общие: ' + m.group })), ...(project.materials || []).map(m => ({ ...m, group: 'Мои материалы' }))];
 function matSelect(id, k, val, kind) {
   const list = allMaterials().filter(m => !kind || m.kind === kind || m.group === 'Мои материалы');
   if (val && !allMaterials().some(m => m.name === val)) list.push({ name: val, group: 'Мои материалы' });
@@ -306,6 +321,7 @@ $('#form').addEventListener('input', e => {
   const v = el.type === 'number' ? Number(el.value) : el.tagName === 'SELECT' && /^-?[\d.]+$/.test(el.value) ? Number(el.value) : el.value;
   if (el.type === 'number' && (el.value === '' || isNaN(v))) return;
   it.params[k] = v;
+  if (MAT_THK[k]) fitThickness(it.params, k);
   if (k === 'hingeBrand' && C.HINGES[v]) Object.assign(it.params, { cupOffset: C.HINGES[v].cupOffset, cupDepth: C.HINGES[v].cupDepth });
   if ((k === 'cupOffset' || k === 'cupDepth') && C.HINGES[it.params.hingeBrand] && C.HINGES[it.params.hingeBrand][k] !== v) it.params.hingeBrand = 'custom';
   clearTimeout(formTimer);
@@ -398,7 +414,7 @@ $('#btnAddCustom').onclick = () => {
   project.custom.push({ id, name: $('#cName').value || 'Деталь', material: $('#cMat').value || 'ЛДСП', T: n('#cT'), L: n('#cL'), W: n('#cW'), qty: Math.max(1, n('#cQ') || 1), edges: {}, holes: [] });
   update(); toast('Деталь добавлена');
 };
-const expCfg = () => (project.exportCfg = project.exportCfg || { preset: 'ru', ...C.EXPORT_PRESETS.ru });
+const expCfg = () => (project.exportCfg = project.exportCfg || { preset: 'hlz', ...C.EXPORT_PRESETS.hlz });
 $('#expPreset').innerHTML = Object.entries(C.EXPORT_PRESETS).map(([k, v]) => `<option value="${k}">${v.label}</option>`).join('') + '<option value="custom">Свой</option>';
 $('#expFields').innerHTML = Object.entries(C.EXPORT_FIELDS).map(([k, v]) => `<div><code>${k}</code> — ${v}</div>`).join('');
 function renderExpCfg() {
@@ -613,64 +629,139 @@ function renderHW() {
 
 // ---------- Смета ----------
 const LSP = 'mebel-prices-v1';
+const SUPPLIERS = { hlz: `HLZ / Хольцгрупп, Минск (прайс от ${HLZ.HLZ_DATE})`, none: 'Только свои цены' };
 function prices() {
-  if (!project.prices) { let d = null; try { d = JSON.parse(localStorage.getItem(LSP) || 'null'); } catch (e) { /* нет */ } project.prices = d || { cur: 'Ft', markup: 0, v: {} }; }
-  project.prices.v = project.prices.v || {};
-  return project.prices;
+  if (!project.prices) { let d = null; try { d = JSON.parse(localStorage.getItem(LSP) || 'null'); } catch (e) { /* нет */ } project.prices = d || { cur: 'BYN', markup: 0, v: {}, supplier: 'hlz', byArea: true }; }
+  const P = project.prices;
+  P.v = P.v || {};
+  if (P.supplier === undefined) { P.supplier = 'hlz'; if (!Object.keys(P.v).length) { P.cur = 'BYN'; P.byArea = true; } }
+  return P;
 }
 function savePrices() { saveLocal(); try { localStorage.setItem(LSP, JSON.stringify(project.prices)); } catch (e) { /* нет */ } }
-function costRows() {
-  const s = C.summary(built, project), res = C.nest(built, project.settings), P = prices();
+const isWood = name => { const m = HLZ.hlzMaterial(name); return m ? m.wood : /дуб|орех|ясень|бук|клён|клен|сосна|венге|вишня|акаци|древес/i.test(name); };
+// Цена поставщика по ключу строки сметы
+function supplierPrice(key) {
+  if (prices().supplier !== 'hlz') return 0;
+  const [t, a, b, c] = key.split(':');
+  const S = HLZ.HLZ_SERVICES, H = HLZ.HLZ_HW;
+  if (t === 'sheet') { const m = /^(.*) (\d+(?:\.\d+)?) мм$/.exec(a); const sm = m && HLZ.hlzMaterial(m[1]); return sm?.prices[m[2]] || 0; }
+  if (t === 'worktop') return HLZ.HLZ_WORKTOP_M;
+  if (t === 'edge') return (HLZ.HLZ_EDGE[a] || HLZ.HLZ_EDGE[a >= 1.5 ? 2 : a >= 0.8 ? 1 : 0.4])[b === 'wood' ? 1 : 0];
+  if (t === 'svc') return S[a] || 0;
+  if (t === 'hw') {
+    if (a === 'runner') { const type = Object.keys(C.RUNNERS).find(k => C.RUNNERS[k].label === b); return H.runner[type]?.[c] || 0; }
+    if (a === 'legs') return H.legs[b] || H.legs.default;
+    if (a === 'handle') return H.handle[b] || 0;
+    return H[a] || 0;
+  }
+  return 0;
+}
+// Строки сметы; idx — номер изделия (только его детали, плита по площади) или undefined — весь проект
+function costRows(idx) {
+  const P = prices(), S = project.settings, all = idx === undefined;
+  const groups = built.groups.filter(g => all || g.rep.itemIdx === idx);
   const rows = [];
-  const add = (sec, key, name, qty, unit) => rows.push({ sec, key, name, qty, unit, price: Number(P.v[key]) || 0 });
-  const SA = project.settings.sheetL * project.settings.sheetW / 1e6;
-  for (const m of res) {
-    const q = P.byArea ? Math.round((s.area[m.mat] || 0) * 1.15 / SA * 100) / 100 : m.sheets.length;
-    add('Плитные материалы', 'sheet:' + m.mat, `${m.mat}, лист ${project.settings.sheetL}×${project.settings.sheetW}${P.byArea ? ' (по площади +15%)' : ''}`, q, 'лист');
+  const add = (sec, key, name, qty, unit) => {
+    if (!(qty > 0)) return;
+    const own = Number(P.v[key]) || 0, sup = supplierPrice(key);
+    rows.push({ sec, key, name, qty, unit, own, sup, price: own || sup });
+  };
+  const SA = S.sheetL * S.sheetW / 1e6;
+  const area = {};
+  for (const g of groups) if (!g.rep.noNest) { const k = C.matKey(g.rep); area[k] = (area[k] || 0) + g.rep.L * g.rep.W * g.qty / 1e6; }
+  const sheets = {};
+  if (all && !P.byArea) for (const m of C.nest(built, S)) sheets[m.mat] = m.sheets.length;
+  for (const [k, a] of Object.entries(area)) {
+    const q = all && !P.byArea ? sheets[k] : Math.round(a * 1.15 / SA * 100) / 100;
+    add('Плитные материалы', 'sheet:' + k, `${k}, лист ${S.sheetL}×${S.sheetW}${all && !P.byArea ? '' : ' (по площади +15%)'}`, q, 'лист');
   }
   const wt = {};
-  for (const g of built.groups) if (g.rep.role === 'worktop') wt[g.rep.material] = (wt[g.rep.material] || 0) + g.rep.L * g.qty / 1000;
+  for (const g of groups) if (g.rep.role === 'worktop') wt[g.rep.material] = (wt[g.rep.material] || 0) + g.rep.L * g.qty / 1000;
   for (const [m, len] of Object.entries(wt)) add('Плитные материалы', 'worktop:' + m, `${m} (погонные метры)`, Math.round(len * 100) / 100, 'м');
-  for (const h of s.hw.filter(h => h[3].startsWith('edge:'))) add('Кромка', h[3], h[0], h[1], h[2]);
-  add('Услуги', 'svc:cut', 'Распил (по длине реза)', s.cutLen, 'м');
-  const edgeTotal = Object.values(s.edge).reduce((a, b) => a + b, 0);
-  add('Услуги', 'svc:band', 'Кромкование (работа)', Math.round(edgeTotal * 10) / 10, 'м');
-  add('Услуги', 'svc:drill', 'Присадка (сверление)', s.holes, 'отв.');
+  // кромка: материал по толщине и типу декора, работа — по толщине кромки и детали
+  const edge = {}, band = { bandThin: 0, band2: 0, bandThick: 0 };
+  let cut = 0, cutThick = 0, drill = 0, cup = 0, groove = 0;
+  for (const g of groups) {
+    const p = g.rep, q = g.qty;
+    if (p.role === 'slide' || p.role === 'worktop') continue;
+    for (const [e, v] of Object.entries(p.edges)) if (v > 0) {
+      const len = (e[0] === 'L' ? p.L : p.W) * q / 1000, cls = isWood(p.material) ? 'wood' : 'uni';
+      edge[v + ':' + cls] = (edge[v + ':' + cls] || 0) + len;
+      band[p.T > 19 ? 'bandThick' : v >= 1.5 ? 'band2' : 'bandThin'] += len;
+    }
+    if (p.T > 18) cutThick += (p.L + p.W) * q / 1000; else cut += (p.L + p.W) * q / 1000;
+    for (const h of p.holes) { if (h.type === 'cup') cup += q; else drill += q; }
+    for (const gq of p.grooves || []) groove += (gq.to - gq.from) * q / 1000;
+  }
+  for (const [k, m] of Object.entries(edge).sort()) {
+    const [v, cls] = k.split(':');
+    add('Кромка', `edge:${v}:${cls}`, `Кромка ABS ${v} мм, ${cls === 'wood' ? 'древесный декор' : 'однотонная'} (+10%)`, Math.ceil(m * 1.1 * 10) / 10, 'м');
+  }
+  const r1 = v => Math.round(v * 10) / 10;
+  add('Услуги', 'svc:cut', 'Распил деталей до 18 мм', r1(cut), 'м');
+  add('Услуги', 'svc:cutThick', 'Распил деталей 19–36 мм', r1(cutThick), 'м');
+  add('Услуги', 'svc:bandThin', 'Кромкование 0,4–1 мм', r1(band.bandThin), 'м');
+  add('Услуги', 'svc:band2', 'Кромкование 2 мм', r1(band.band2), 'м');
+  add('Услуги', 'svc:bandThick', 'Кромкование деталей 20–38 мм', r1(band.bandThick), 'м');
+  add('Услуги', 'svc:drill', 'Присадка до Ø35 (эксцентрики, полкодержатели, шканты, ручки)', drill, 'отв.');
+  add('Услуги', 'svc:cup', 'Присадка Ø35 под петли', cup, 'отв.');
+  add('Услуги', 'svc:groove', 'Паз под заднюю стенку', r1(groove), 'м');
+  const sub = all ? built : { ...built, groups, items: built.items.map((g, i) => (i === idx ? g : { extra: {} })) };
+  const s = C.summary(sub, project);
   for (const h of s.hw.filter(h => !h[3].startsWith('edge:'))) add('Фурнитура', 'hw:' + h[3], h[0], h[1], h[2]);
   return rows;
 }
+const rowsTotal = rows => rows.reduce((a, r) => a + r.qty * r.price, 0);
+function itemEstimate(idx) {
+  const rows = costRows(idx), mk = Number(prices().markup) || 0;
+  const total = rowsTotal(rows);
+  return { total, withMarkup: total * (1 + mk / 100), missing: rows.filter(r => !r.price).length };
+}
 function renderCost() {
   const P = prices(), rows = costRows();
-  $('#curSel').value = P.cur || 'Ft'; $('#markup').value = P.markup || 0; $('#byArea').checked = !!P.byArea;
+  $('#curSel').value = P.cur || 'BYN'; $('#markup').value = P.markup || 0; $('#byArea').checked = !!P.byArea; $('#supSel').value = P.supplier || 'none';
   let html = '<div class="tblwrap"><table class="tbl cost"><thead><tr><th>Позиция</th><th>Кол-во</th><th>Ед.</th><th>Цена за ед.</th><th>Сумма</th></tr></thead><tbody>';
   let last = '', total = 0;
   const secSum = {};
   for (const r of rows) {
     const sum = r.qty * r.price; total += sum; secSum[r.sec] = (secSum[r.sec] || 0) + sum;
     if (r.sec !== last) { html += `<tr class="grp"><td colspan="5">${r.sec}</td></tr>`; last = r.sec; }
-    html += `<tr><td>${esc(r.name)}</td><td class="n">${fmt(r.qty)}</td><td>${r.unit}</td><td><input type="number" min="0" step="any" class="price" data-key="${esc(r.key)}" value="${r.price || ''}" placeholder="0"></td><td class="n">${money(sum)}</td></tr>`;
+    const src = r.own ? '<span class="src own" title="Твоя цена">своя</span>' : r.sup ? '<span class="src sup" title="Цена поставщика">HLZ</span>' : '<span class="src no" title="Нет цены — впиши">нет цены</span>';
+    html += `<tr class="${r.price ? '' : 'noprice'}"><td>${esc(r.name)}</td><td class="n">${r.unit === 'лист' ? String(r.qty).replace('.', ',') : fmt(r.qty)}</td><td>${r.unit}</td><td><input type="number" min="0" step="any" class="price" data-key="${esc(r.key)}" value="${r.own || ''}" placeholder="${r.sup || 0}"> ${src}</td><td class="n">${money(sum)}</td></tr>`;
   }
   const mk = Number(P.markup) || 0;
   html += `</tbody><tfoot>${Object.entries(secSum).map(([k, v]) => `<tr><td colspan="4">${k}</td><td class="n">${money(v)}</td></tr>`).join('')}
     <tr class="tot"><td colspan="4">Себестоимость</td><td class="n">${money(total)}</td></tr>
     <tr class="tot"><td colspan="4">Цена с наценкой ${mk}%</td><td class="n">${money(total * (1 + mk / 100))}</td></tr></tfoot></table></div>`;
+  const miss = rows.filter(r => !r.price).length;
+  $('#costNote').innerHTML = (P.supplier === 'hlz' ? `Цены HLZ подставлены автоматически (серым в поле). Впиши свою цену, чтобы заменить. <a href="${HLZ.HLZ_URL}" target="_blank" rel="noopener">hlz.by</a>` : 'Цены вписываются вручную.') + (miss ? ` <b>Без цены: ${miss} поз.</b>` : '');
   $('#costOut').innerHTML = html;
 }
 const money = v => `${(Math.round(v * 100) / 100).toLocaleString('ru-RU')} ${esc(prices().cur || '')}`;
 $('#costOut').addEventListener('change', e => {
   const k = e.target.dataset.key; if (!k) return;
-  prices().v[k] = Number(e.target.value) || 0; savePrices(); renderCost();
+  const v = Number(e.target.value) || 0;
+  if (v) prices().v[k] = v; else delete prices().v[k];
+  savePrices(); renderCost(); renderItems(); render3dPrice();
 });
-$('#curSel').onchange = e => { prices().cur = e.target.value; savePrices(); renderCost(); };
+$('#supSel').innerHTML = Object.entries(SUPPLIERS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
+$('#supSel').onchange = e => { const P = prices(); P.supplier = e.target.value; if (P.supplier === 'hlz') P.cur = 'BYN'; savePrices(); update(); };
+$('#curSel').onchange = e => { prices().cur = e.target.value; savePrices(); update(); };
 $('#byArea').onchange = e => { prices().byArea = e.target.checked; savePrices(); renderCost(); };
-$('#markup').onchange = e => { prices().markup = Number(e.target.value) || 0; savePrices(); renderCost(); };
+$('#markup').onchange = e => { prices().markup = Number(e.target.value) || 0; savePrices(); update(); };
 $('#btnCostCSV').onclick = () => {
   const rows = costRows(), P = prices();
   const out = [['Раздел', 'Позиция', 'Кол-во', 'Ед.', `Цена, ${P.cur}`, `Сумма, ${P.cur}`], ...rows.map(r => [r.sec, r.name, r.qty, r.unit, r.price, Math.round(r.qty * r.price * 100) / 100])];
-  const total = rows.reduce((a, r) => a + r.qty * r.price, 0);
+  const total = rowsTotal(rows);
   out.push(['', 'Себестоимость', '', '', '', Math.round(total * 100) / 100], ['', `С наценкой ${P.markup || 0}%`, '', '', '', Math.round(total * (1 + (P.markup || 0) / 100) * 100) / 100]);
   download(fileBase() + '_smeta.csv', C.toCSV(out, { sep: ';', comma: true }), 'text/csv;charset=utf-8');
 };
+function render3dPrice() {
+  const el = $('#v3dPrice'); if (!el) return;
+  if (!project.items[sel.item]) { el.textContent = ''; return; }
+  const e = itemEstimate(sel.item), mk = Number(prices().markup) || 0;
+  el.innerHTML = `≈ ${money(e.total)}${mk ? ` · с наценкой ${money(e.withMarkup)}` : ''}${e.missing ? ` <span class="muted">(без цены: ${e.missing})</span>` : ''}`;
+}
 
 // ---------- 3D ----------
 let T3 = null, t3loading = false;
@@ -743,7 +834,8 @@ function render3d() {
   if (!g) { dimsEl.textContent = ''; return; }
   const parts = built.parts.filter(p => p.itemIdx === sel.item && p.orient);
   const d = g.dims;
-  dimsEl.textContent = `Габариты: ${d.W} × ${d.H} × ${d.D} мм (Ш×В×Г) · деталей: ${parts.length}`;
+  dimsEl.innerHTML = `Габариты: ${d.W} × ${d.H} × ${d.D} мм (Ш×В×Г) · деталей: ${parts.length}<div id="v3dPrice" class="v3d-price"></div>`;
+  render3dPrice();
   const showF = $('#optFronts').checked, transp = $('#optTransp').checked, holes = $('#optHoles').checked, expl = $('#optExplode').checked;
   const center = new THREE.Vector3(d.W / 2, 0, (parts.reduce((a, p) => Math.min(a, p.oz), 0) + d.D) / 2);
   const holeMat = new THREE.MeshBasicMaterial({ color: 0x333333 });

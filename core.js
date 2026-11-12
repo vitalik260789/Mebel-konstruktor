@@ -76,8 +76,8 @@ export const MATERIALS = [
 export const THICKNESSES = { plate: [8, 10, 12, 15, 16, 18, 19, 22, 25, 28, 32], thin: [3, 4, 5, 6, 8] };
 
 const BASE = {
-  type: 'cabinet', t: 16, matCorpus: 'ЛДСП Белый', frontT: 16, matFront: 'ЛДСП Дуб Сонома',
-  backType: 'overlay', backT: 3, matBack: 'ХДФ Белый', topType: 'overlay', base: 'plinth',
+  type: 'cabinet', t: 16, matCorpus: 'ЛДСП Egger W960 Белый классический', frontT: 18, matFront: 'ЛДСП Egger H1145 Дуб Бардолино натуральный',
+  backType: 'overlay', backT: 3, matBack: 'ХДФ лакированная белая', topType: 'overlay', base: 'plinth',
   plinthH: 60, plinthSetback: 40, legsH: 100, shelfType: 'pins', shelfRecess: 10, gap: 3, gapEdge: 1.5,
   handle: 96, edgeFront: 2, edgeOther: 0.4, edgeFacade: 2,
   slide: false, slideN: 2, slideOverlap: 30, slideTrack: 100, slideHDed: 40,
@@ -639,7 +639,7 @@ export const matKey = p => `${p.material} ${p.T} мм`;
 // Итоги: площадь плиты, кромка, фурнитура
 export function summary(built, proj) {
   const area = {}, edge = {};
-  let conf = 0, pins = 0, cups = 0, handles = 0, backScrews = 0, cams = 0, dowels = 0, holes = 0, cutLen = 0;
+  let conf = 0, pins = 0, cups = 0, handles = {}, backScrews = 0, cams = 0, dowels = 0, holes = 0, cutLen = 0;
   for (const g of built.groups) {
     const p = g.rep, q = g.qty, k = matKey(p);
     holes += p.holes.length * q;
@@ -655,7 +655,7 @@ export function summary(built, proj) {
       if (h.type === 'dowel' && h.face) dowels += q;
       if (h.type === 'pin') pins += q;
       if (h.type === 'cup') cups += q;
-      if (h.type === 'handle' && p.role === 'front') handles += q / 2;
+      if (h.type === 'handle' && p.role === 'front') { const sp = proj?.items?.[p.itemIdx]?.params?.handle || 0; handles[sp] = (handles[sp] || 0) + q / 2; }
     }
     if (p.role === 'back' && !/в паз/.test(p.name)) backScrews += Math.ceil((2 * (p.L + p.W)) / 150) * q;
   }
@@ -682,7 +682,7 @@ export function summary(built, proj) {
       hw.push([`Ролики купе (комплект на дверь) (${name})`, sl.n, 'компл', 'slideRollers']);
     }
   });
-  if (handles) hw.push(['Ручка (межосевое по проекту) + винты М4', handles, 'шт', 'handle']);
+  for (const [sp, n] of Object.entries(handles)) hw.push([`Ручка, межосевое ${sp} мм + винты М4`, n, 'шт', `handle:${sp}`]);
   if (backScrews) hw.push(['Саморез/гвоздь для ХДФ (задняя стенка, дно ящиков)', backScrews, 'шт', 'backScrew']);
   for (const [v, m] of Object.entries(edge).sort((a, b) => b[0] - a[0]))
     hw.push([`Кромка ПВХ ${v} мм (с запасом 10%)`, Math.ceil(m * 1.1 * 10) / 10, 'м', `edge:${v}`]);
@@ -779,9 +779,10 @@ export const EXPORT_FIELDS = {
   no: '№', item: 'Изделие', name: 'Деталь', material: 'Материал', T: 'Толщина', L: 'Длина чистовая', W: 'Ширина чистовая',
   cutL: 'Длина пильная', cutW: 'Ширина пильная', qty: 'Кол-во', edgeL1: 'Кромка Д1', edgeL2: 'Кромка Д2', edgeW1: 'Кромка Ш1', edgeW2: 'Кромка Ш2',
   edgesLong: 'Кол-во длинных кромок', edgesShort: 'Кол-во коротких кромок', edgeMaxT: 'Толщина кромки', edgeCode: 'Кромка (Д1/Д2/Ш1/Ш2)',
-  grain: 'Текстура (1 — не поворачивать)', rotate: 'Можно поворачивать (1/0)', holes: 'Отверстий', groove: 'Паз', note: 'Примечание',
+  grain: 'Текстура (1 — не поворачивать)', rotate: 'Можно поворачивать (1/0)', rotateYN: 'Вращать (да/нет)', hlzNote: 'Примечание для HLZ (паз, присадка)', holes: 'Отверстий', groove: 'Паз', note: 'Примечание',
 };
 export const EXPORT_PRESETS = {
+  hlz: { label: 'HLZ / Хольцгрупп (бланк заказа)', sep: ';', comma: true, cols: 'Наименование детали = name\nМатериал = material\nТолщина = T\nРазмер X (по текстуре) = L\nРазмер Y = W\nКол-во = qty\nКромка X1 = edgeL1\nКромка X2 = edgeL2\nКромка Y1 = edgeW1\nКромка Y2 = edgeW2\nВращать = rotateYN\nПримечание = hlzNote' },
   ru: { label: 'Стандарт (русский)', sep: ';', comma: true, cols: 'Деталь = name\nМатериал = material\nТолщина = T\nДлина = cutL\nШирина = cutW\nКол-во = qty\nКромка Д1 = edgeL1\nКромка Д2 = edgeL2\nКромка Ш1 = edgeW1\nКромка Ш2 = edgeW2\nПаз = groove\nПримечание = note' },
   hu: { label: 'Magyar lapszabászat', sep: ';', comma: true, cols: 'Megnevezés = name\nAnyag = material\nVastagság = T\nHossz = L\nSzélesség = W\nDarab = qty\nÉlzárás hossz (db) = edgesLong\nÉlzárás szél. (db) = edgesShort\nÉlvastagság = edgeMaxT\nForgatható = rotate\nMegjegyzés = note' },
   min: { label: 'Минимальный (размеры и количество)', sep: ';', comma: true, cols: 'Длина = cutL\nШирина = cutW\nКол-во = qty\nМатериал = material' },
@@ -798,7 +799,9 @@ export function exportRows(built, S, cfg) {
       edgeL1: e.L1, edgeL2: e.L2, edgeW1: e.W1, edgeW2: e.W2,
       edgesLong: longE.filter(k => e[k] > 0).length, edgesShort: shortE.filter(k => e[k] > 0).length,
       edgeMaxT: Math.max(e.L1, e.L2, e.W1, e.W2), edgeCode: [e.L1, e.L2, e.W1, e.W2].join('/'),
-      grain: S.grain ? 1 : 0, rotate: S.grain ? 0 : 1, holes: p.holes.length,
+      grain: S.grain ? 1 : 0, rotate: S.grain ? 0 : 1, rotateYN: S.grain ? 'нет' : 'да',
+      hlzNote: [...(p.grooves || []).map(q => `Паз по ${q.axis === 'y' ? 'Y1' : 'X1'}_${q.pos}*${q.w}*${q.depth}`), p.holes.length ? `присадка ${p.holes.length} отв. по чертежу №${g.no}` : ''].filter(Boolean).join('; '),
+      holes: p.holes.length,
       groove: (p.grooves || []).map(q => `паз ${q.w}x${q.depth}, ${q.pos} от ${q.axis === 'y' ? 'Ш1' : 'Д1'}`).join('; '),
       note: [p.item, (p.grooves || []).length ? 'паз' : '', p.holes.length ? `присадка ${p.holes.length} отв.` : ''].filter(Boolean).join(', '),
     };
