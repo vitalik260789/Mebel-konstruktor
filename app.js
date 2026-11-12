@@ -1,4 +1,4 @@
-import * as C from './core.js?v=202611120953';
+import * as C from './core.js?v=202611120957';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -22,7 +22,27 @@ function normalize(p) {
   });
   return p;
 }
-function saveLocal() { try { localStorage.setItem(LS, JSON.stringify(project)); } catch (e) { /* хранилище недоступно */ } }
+function saveLocal() { try { localStorage.setItem(LS, JSON.stringify(project)); } catch (e) { /* хранилище недоступно */ } histSnap(); }
+// ---------- История (отмена) ----------
+const hist = { stack: [], i: -1, tm: null };
+function histSnap(now = false) {
+  clearTimeout(hist.tm);
+  const go = () => {
+    const st = JSON.stringify(project);
+    if (hist.stack[hist.i] === st) return;
+    hist.stack = hist.stack.slice(0, hist.i + 1); hist.stack.push(st);
+    if (hist.stack.length > 100) hist.stack.shift();
+    hist.i = hist.stack.length - 1; histBtns();
+  };
+  if (now) go(); else hist.tm = setTimeout(go, 400);
+}
+function histBtns() { $('#btnUndo').disabled = hist.i <= 0; $('#btnRedo').disabled = hist.i >= hist.stack.length - 1; }
+function histGo(d) {
+  histSnap(true);
+  const j = hist.i + d; if (j < 0 || j >= hist.stack.length) return;
+  hist.i = j; project = JSON.parse(hist.stack[j]); $('#projName').value = project.name;
+  update({ form: true }); histBtns(); toast(d < 0 ? 'Отменено' : 'Возвращено');
+}
 function loadLocal() { try { const s = localStorage.getItem(LS); return s ? JSON.parse(s) : null; } catch (e) { return null; } }
 
 async function encodeProject(p) {
@@ -662,7 +682,7 @@ async function init3d() {
     const { OrbitControls } = await import('three/addons/controls/OrbitControls.js');
     const { CSS2DRenderer, CSS2DObject } = await import('three/addons/renderers/CSS2DRenderer.js');
     const el = $('#view3d');
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     el.appendChild(renderer.domElement);
     const labels = new CSS2DRenderer();
@@ -741,6 +761,11 @@ function render3d() {
     }
     mesh.position.copy(pc).sub(center).add(off);
     mesh.userData.uid = p.uid;
+    mesh.userData.no = findGroup(p.uid)?.no;
+    if ($('#optNums').checked && mesh.userData.no) {
+      const d0 = document.createElement('div'); d0.className = 'num3d'; d0.textContent = mesh.userData.no;
+      const lo = new T3.CSS2DObject(d0); mesh.add(lo);
+    }
     const edges = new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry), new THREE.LineBasicMaterial({ color: 0x5a5148 }));
     mesh.add(edges);
     group.add(mesh); T3.meshes.push(mesh);
@@ -825,7 +850,7 @@ function fitCamera(d, front = false) {
   T3.camera.position.copy(t).addScaledVector(v, k);
   T3.controls.update();
 }
-for (const id of ['#optFronts', '#optTransp', '#optHoles', '#optExplode', '#optDims']) $(id).addEventListener('change', render3d);
+for (const id of ['#optFronts', '#optTransp', '#optHoles', '#optExplode', '#optDims', '#optNums']) $(id).addEventListener('change', render3d);
 $('#btnResetView').onclick = () => { const g = built.items[sel.item]; if (T3 && g) fitCamera(g.dims, true); };
 
 // ---------- Шаблоны 1:1 ----------
@@ -920,6 +945,74 @@ window.addEventListener('afterprint', () => document.body.classList.remove('prin
 $('#btnTpl1').onclick = () => { const g = findGroup(sel.uid); if (g) printTemplates([g]); };
 $('#btnTplAll').onclick = () => printTemplates(built.groups.filter(g => g.rep.holes.length));
 
+// ---------- Схема сборки ----------
+function assemblySteps(idx) {
+  const gs = built.groups.filter(g => g.rep.itemIdx === idx);
+  const P = project.items[idx].params, ex = built.items[idx]?.extra || {};
+  const by = re => gs.filter(g => re.test(g.rep.id) || re.test(g.rep.name));
+  const L = arr => arr.map(g => `№${g.no}${g.qty > 1 ? ` (${g.qty} шт)` : ''}`).join(', ');
+  const fast = { conf: 'конфирматы 7×50 (сверло под конфирмат, затем шестигранник)', minifix: 'шканты на клей + эксцентрики (вкрути штоки, вставь шканты, соедини и затяни эксцентрики)', dowel: 'шканты на клей ПВА, стянуть струбцинами' }[ex.joint || 'conf'];
+  const st = [];
+  st.push(`Разложи детали по номерам (номера — как в спецификации и на схеме). Проверь кромку и присадку по чертежам.`);
+  const sides = by(/^side/), bottom = by(/^bottom$/), plinth = by(/^plinth$/);
+  st.push(`Корпус: соедини боковины ${L(sides)} с дном ${L(bottom)}${plinth.length ? ` и цоколем ${L(plinth)}` : ''}. Крепёж: ${fast}.`);
+  const parts = by(/^part\d/);
+  if (parts.length) st.push(`Установи вертикальные перегородки ${L(parts)} на дно.`);
+  const top = by(/^top$/), rails = by(/^rail/);
+  if (top.length) st.push(`Установи крышку ${L(top)}.`);
+  if (rails.length) st.push(`Установи царги ${L(rails)}.`);
+  const dv = gs.filter(g => /dv\d/.test(g.rep.id)), fixedSh = gs.filter(g => g.rep.name === 'Полка' && g.rep.holes.length);
+  if (dv.length || fixedSh.length) st.push(`Установи полки-перегородки и неподвижные полки ${L([...dv, ...fixedSh])}.`);
+  const back = by(/^back$/);
+  if (back.length) st.push(/в паз/.test(back[0].rep.name)
+    ? `Задняя стенка ${L(back)} заводится в паз до установки крышки (шаги 2–4 выполняй с уже вставленной стенкой).`
+    : `Проверь диагонали корпуса (должны быть равны) и прибей/прикрути заднюю стенку ${L(back)} — она фиксирует геометрию.`);
+  if (ex.legs) st.push(`Прикрути ножки (${ex.legs} шт) к дну.`);
+  if (ex.hang) st.push('Прикрути навесы в верхних углах боковин, на стене — монтажную шину или крюки; выставь по уровню регулировкой навесов.');
+  const box = gs.filter(g => g.rep.role === 'box' || /Ящик: дно/.test(g.rep.name));
+  if (box.length) st.push(`Собери короба ящиков ${L(box)} на конфирматах, прибей дно. Установи направляющие (${ex.runnerLabel}, L=${ex.runnerLen}) на боковины корпуса и короба, вставь ящики, прикрути фасады ${L(by(/Фасад/))} изнутри короба и выставь зазоры.`);
+  const doors = gs.filter(g => g.rep.role === 'front' && /Дверь/.test(g.rep.name));
+  if (doors.length) st.push(`Запрессуй петли в двери ${L(doors)}, прикрути планки к корпусу, навесь двери и отрегулируй зазоры (${P.gap} мм) винтами петель.`);
+  const pinSh = gs.filter(g => g.rep.name === 'Полка' && !g.rep.holes.length);
+  if (pinSh.length) st.push(`Вставь полкодержатели и уложи полки ${L(pinSh)}.`);
+  if (ex.slide) st.push(`Шкаф-купе: прикрути верхнюю и нижнюю направляющие (L=${ex.slide.openW}), установи двери ${ex.slide.dw}×${ex.slide.dh} (${ex.slide.n} шт) — сначала задний путь, потом передний, отрегулируй ролики.`);
+  if (by(/^worktop$/).length) st.push(`Установи столешницу ${L(by(/^worktop$/))} — крепи снизу через царги саморезами, торцы закрой планками/кромкой.`);
+  st.push('Вставь заглушки, протри, проверь работу дверей и ящиков.');
+  return st;
+}
+function captureAssembly() {
+  const nums = $('#optNums').checked, expl = $('#optExplode').checked, fr = $('#optFronts').checked;
+  $('#optNums').checked = false; $('#optExplode').checked = true; $('#optFronts').checked = true;
+  render3d(); T3.renderer.render(T3.scene, T3.camera);
+  const src = T3.renderer.domElement, c = document.createElement('canvas');
+  c.width = src.width; c.height = src.height;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height); ctx.drawImage(src, 0, 0);
+  const k = src.width / src.clientWidth, seen = new Set();
+  ctx.font = `bold ${13 * k}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  for (const m of T3.meshes) {
+    const no = m.userData.no; if (!no) continue;
+    const v = m.getWorldPosition(new T3.THREE.Vector3()).project(T3.camera);
+    const x = (v.x + 1) / 2 * c.width, y = (1 - v.y) / 2 * c.height, key = `${no}:${Math.round(x / 20)}:${Math.round(y / 20)}`;
+    if (seen.has(key)) continue; seen.add(key);
+    ctx.fillStyle = '#2b2520'; ctx.beginPath(); ctx.arc(x, y, 11 * k, 0, 7); ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2 * k; ctx.stroke();
+    ctx.fillStyle = '#fff'; ctx.fillText(no, x, y + 0.5 * k);
+  }
+  $('#optNums').checked = nums; $('#optExplode').checked = expl; $('#optFronts').checked = fr; render3d();
+  return c.toDataURL('image/png');
+}
+$('#btnAssembly').onclick = () => {
+  if (!T3) { toast('3D-вид ещё не загрузился'); return; }
+  const it = project.items[sel.item]; if (!it) return;
+  const img = captureAssembly(), steps = assemblySteps(sel.item);
+  const gs = built.groups.filter(g => g.rep.itemIdx === sel.item);
+  $('#print').innerHTML = `<div class="pr-page asm"><h2>Схема сборки: ${esc(it.params.name)}</h2><img src="${img}" alt="Схема сборки">
+    <h3>Порядок сборки</h3><ol>${steps.map(x => `<li>${esc(x)}</li>`).join('')}</ol></div>
+    <div class="pr-page"><h3>Детали</h3><table class="tbl"><thead><tr><th>№</th><th>Деталь</th><th>Д×Ш×Т</th><th>Кол.</th></tr></thead><tbody>${gs.map(g => `<tr><td>${g.no}</td><td>${esc(g.rep.name)}</td><td>${fmt(g.rep.L)}×${fmt(g.rep.W)}×${g.rep.T}</td><td>${g.qty}</td></tr>`).join('')}</tbody></table></div>`;
+  setTimeout(() => window.print(), 80);
+};
+
 // ---------- Печать ----------
 function buildPrint() {
   const S = project.settings;
@@ -963,6 +1056,17 @@ $('#btnShare').onclick = async () => {
   } catch (e) { toast('Браузер не поддерживает сжатие ссылки'); }
 };
 
+$('#btnUndo').onclick = () => histGo(-1);
+$('#btnRedo').onclick = () => histGo(1);
+document.addEventListener('keydown', e => {
+  if (!(e.ctrlKey || e.metaKey)) return;
+  const tag = document.activeElement?.tagName, typing = (tag === 'INPUT' && !['checkbox', 'radio'].includes(document.activeElement.type)) || tag === 'TEXTAREA';
+  if (typing) return;
+  const k = e.key.toLowerCase();
+  if (k === 'z' && !e.shiftKey) { e.preventDefault(); histGo(-1); }
+  else if ((k === 'z' && e.shiftKey) || k === 'y') { e.preventDefault(); histGo(1); }
+});
+
 // ---------- Старт ----------
 (async function start() {
   project = null;
@@ -974,4 +1078,5 @@ $('#btnShare').onclick = async () => {
   if (!project) { const l = loadLocal(); project = l ? normalize(l) : newProject(); }
   $('#projName').value = project.name;
   update({ form: true });
+  histSnap(true);
 })();

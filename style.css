@@ -46,11 +46,15 @@ legend{font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.0
 .v3d-top>*{pointer-events:auto}
 .v3d-tools{display:flex;gap:10px;flex-wrap:wrap;background:#ffffffe0;padding:6px 10px;border-radius:9px;border:1px solid var(--line);align-items:center}
 .v3d-tools label{display:flex;gap:4px;align-items:center;cursor:pointer}
-.v3d-info{position:absolute;right:10px;top:10px;max-width:300px;background:#fff;border:1px solid var(--line);border-radius:9px;padding:9px 11px;display:none}
+.v3d-info{position:absolute;right:10px;bottom:10px;max-width:300px;background:#fff;border:1px solid var(--line);border-radius:9px;padding:9px 11px;display:none}
 .v3d-info.on{display:block}
 .v3d-dims{background:#ffffffe0;border-radius:8px;padding:5px 10px;border:1px solid var(--line);font-weight:600}
 .labels3d{position:absolute;top:0;left:0;pointer-events:none}
 .dim3d{background:#b4321f;color:#fff;font-weight:700;font-size:13px;padding:2px 7px;border-radius:5px;white-space:nowrap;box-shadow:0 1px 3px #0003}
+.num3d{background:#2b2520;color:#fff;font:700 11px sans-serif;border-radius:10px;padding:1px 6px;border:1.5px solid #fff;box-shadow:0 1px 3px #0005}
+.top button:disabled{opacity:.4;cursor:default}
+.asm img{width:100%;border:1px solid #ddd;border-radius:6px}
+.asm ol li{margin:4px 0}
 .err{padding:30px;color:#a33}
 .bar{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap}
 .bar.wrap label{display:flex;align-items:center;gap:5px}
