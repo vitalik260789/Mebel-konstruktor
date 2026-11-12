@@ -138,6 +138,11 @@ svg.dwg{width:100%;height:auto;display:block}
   .v3d-info{top:auto;bottom:10px;right:10px;left:10px;max-width:none}
   .dim3d{font-size:11px;padding:1px 5px}
 }
+@page tpl{size:A4 landscape;margin:8mm}
+.tpl-page{page:tpl;page-break-after:always;break-after:page}
+.tpl-page:last-child{page-break-after:auto;break-after:auto}
+.tpl-h{font:10px sans-serif;margin-bottom:1mm;height:8mm;overflow:hidden}
+.tpl-page svg{display:block}
 @media print{
   body{background:#fff}
   .top,.app,.modal,.toast{display:none!important}
@@ -149,6 +154,7 @@ svg.dwg{width:100%;height:auto;display:block}
   .tbl th{position:static}
   .tbl th,.tbl td{padding:3px 5px;font-size:11px}
   svg.dwg{max-height:150mm}
+  body.print-tpl .pr-page{display:none}
 }
 
 .hint{font-size:12px;color:var(--mut);margin:4px 0 8px}

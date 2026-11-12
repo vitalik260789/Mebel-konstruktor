@@ -1,4 +1,4 @@
-import * as C from './core.js?v=202611120944';
+import * as C from './core.js?v=202611120947';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -753,6 +753,98 @@ function fitCamera(d, front = false) {
 }
 for (const id of ['#optFronts', '#optTransp', '#optHoles', '#optExplode', '#optDims']) $(id).addEventListener('change', render3d);
 $('#btnResetView').onclick = () => { const g = built.items[sel.item]; if (T3 && g) fitCamera(g.dims, true); };
+
+// ---------- Шаблоны 1:1 ----------
+// Лист A4 альбомный, поля 8 мм: рабочая зона 279×166 мм (сверху 14 мм на подписи), перекрытие листов 10 мм
+const TW = 279, TH = 166, OV = 10;
+function ruler() {
+  let o = `<g transform="translate(0,${TH + 6})"><line x1="0" y1="0" x2="100" y2="0" stroke="#000" stroke-width="0.4"/>`;
+  for (let i = 0; i <= 10; i++) o += `<line x1="${i * 10}" y1="${i % 5 ? -1.5 : -3}" x2="${i * 10}" y2="0" stroke="#000" stroke-width="0.3"/>`;
+  return o + `<text x="103" y="1" font-size="3">← проверь линейкой: ровно 100 мм. Печатать в масштабе 100% («Фактический размер»).</text></g>`;
+}
+function holeMark(x, y, h) {
+  const rr = h.d / 2, c = h.face === 'B' && !h.through ? '#c92a2a' : '#000';
+  return `<circle cx="${x}" cy="${y}" r="${rr}" fill="none" stroke="${c}" stroke-width="0.3"/>` +
+    `<line x1="${x - rr - 2}" y1="${y}" x2="${x + rr + 2}" y2="${y}" stroke="${c}" stroke-width="0.15"/><line x1="${x}" y1="${y - rr - 2}" x2="${x}" y2="${y + rr + 2}" stroke="${c}" stroke-width="0.15"/>` +
+    `<text x="${x + rr + 1}" y="${y - 1}" font-size="2.4" fill="${c}">Ø${fmt(h.d)}${h.through ? ' скв.' : '×' + fmt(h.depth)} (${fmt(h.x)}; ${fmt(h.y)})</text>`;
+}
+const tplPage = (title, body) => `<div class="tpl-page"><div class="tpl-h">${title}</div><svg xmlns="http://www.w3.org/2000/svg" width="${TW}mm" height="${TH + 10}mm" viewBox="0 0 ${TW} ${TH + 10}" font-family="sans-serif">${body}${ruler()}</svg></div>`;
+// Листы на пласть: face 'A' — вид со стороны A; 'B' — вид со стороны B (зеркально по X)
+function faceTemplates(g, face) {
+  const p = g.rep, pages = [];
+  const holes = p.holes.filter(h => h.face && (h.face === face || h.through));
+  if (!holes.length) return pages;
+  const mx = x => (face === 'B' ? p.L - x : x);
+  const stepX = TW - OV, stepY = TH - OV;
+  const nx = Math.max(1, Math.ceil((p.L - OV) / stepX)), ny = Math.max(1, Math.ceil((p.W - OV) / stepY));
+  const tiles = [];
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+    const x0 = i * stepX, y0 = j * stepY;
+    const inside = holes.filter(h => { const hx = mx(h.x); return hx >= x0 - 1 && hx <= x0 + TW + 1 && h.y >= y0 - 1 && h.y <= y0 + TH + 1; });
+    if (inside.length) tiles.push({ i, j, x0, y0, inside });
+  }
+  tiles.forEach((tl, k) => {
+    const X = x => mx(x) - tl.x0, Y = y => TH - (y - tl.y0);
+    // контур детали в пределах листа
+    const rx0 = Math.max(0, -tl.x0), ry1 = Math.min(TH, TH + tl.y0), rx1 = Math.min(TW, p.L - tl.x0), ry0 = Math.max(0, TH - (p.W - tl.y0));
+    let b = `<rect x="${rx0}" y="${ry0}" width="${rx1 - rx0}" height="${ry1 - ry0}" fill="none" stroke="#999" stroke-width="0.2" stroke-dasharray="2 1"/>`;
+    const edgesIn = [];
+    if (tl.x0 <= 0) edgesIn.push(face === 'B' ? 'Ш2' : 'Ш1'); if (tl.x0 + TW >= p.L) edgesIn.push(face === 'B' ? 'Ш1' : 'Ш2');
+    if (tl.y0 <= 0) edgesIn.push('Д1'); if (tl.y0 + TH >= p.W) edgesIn.push('Д2');
+    for (const [e, x1, y1, x2, y2] of [['L', 0, 0, p.L, 0], ['L', 0, p.W, p.L, p.W], ['W', 0, 0, 0, p.W], ['W', p.L, 0, p.L, p.W]])
+      b += `<line x1="${mx(x1) - tl.x0}" y1="${Y(y1)}" x2="${mx(x2) - tl.x0}" y2="${Y(y2)}" stroke="#000" stroke-width="0.5"/>`;
+    b = `<defs><clipPath id="c${k}${face}${g.no}"><rect x="0" y="0" width="${TW}" height="${TH}"/></clipPath></defs><g clip-path="url(#c${k}${face}${g.no})">${b}`;
+    for (const h of tl.inside) b += holeMark(X(h.x), Y(h.y), h);
+    b += '</g>';
+    if (tl.x0 > 0) b += `<line x1="${OV}" y1="0" x2="${OV}" y2="${TH}" stroke="#2f7de1" stroke-width="0.2" stroke-dasharray="1 1"/><text x="${OV + 1}" y="4" font-size="2.5" fill="#2f7de1">совместить с предыдущим листом</text>`;
+    if (tl.y0 > 0) b += `<line x1="0" y1="${TH - OV}" x2="${TW}" y2="${TH - OV}" stroke="#2f7de1" stroke-width="0.2" stroke-dasharray="1 1"/>`;
+    pages.push(tplPage(`№${g.no} ${esc(p.name)} ${fmt(p.L)}×${fmt(p.W)} — пласть ${face}${face === 'B' ? ' (зеркально, накладывать на обратную сторону)' : ''} · лист ${k + 1}/${tiles.length} · X ${fmt(tl.x0)}…${fmt(Math.min(p.L, tl.x0 + TW))}, Y ${fmt(tl.y0)}…${fmt(Math.min(p.W, tl.y0 + TH))} · совмести с кромками ${edgesIn.join(', ') || '— (по меткам)'}`, b));
+  });
+  return pages;
+}
+// Полоски на торцы: длина вдоль торца, высота = толщина детали
+function edgeTemplates(g) {
+  const p = g.rep, strips = [];
+  for (const e of ['L1', 'L2', 'W1', 'W2']) {
+    const hs = p.holes.filter(h => h.edge === e);
+    if (!hs.length) continue;
+    const len = e[0] === 'L' ? p.L : p.W, pos = h => (e[0] === 'L' ? h.x : h.y);
+    for (let a = 0; a < len; a += TW - OV) {
+      const ins = hs.filter(h => pos(h) >= a - 1 && pos(h) <= a + TW + 1);
+      if (ins.length) strips.push({ e, a, len, ins, pos });
+    }
+  }
+  const pages = [], per = 5;
+  for (let k = 0; k < strips.length; k += per) {
+    let b = '';
+    strips.slice(k, k + per).forEach((st, q) => {
+      const y0 = q * 34 + 8, w = Math.min(TW, st.len - st.a);
+      b += `<text x="0" y="${y0 - 2}" font-size="3">Торец ${C.EDGE_NAMES[st.e]} · ${fmt(st.a)}…${fmt(st.a + w)} мм (отсчёт от ${st.e[0] === 'L' ? 'Ш1' : 'Д1'}) · толщина ${p.T}</text>`;
+      b += `<rect x="0" y="${y0}" width="${w}" height="${p.T}" fill="none" stroke="#000" stroke-width="0.4"/>`;
+      b += `<line x1="0" y1="${y0 + p.T / 2}" x2="${w}" y2="${y0 + p.T / 2}" stroke="#999" stroke-width="0.15" stroke-dasharray="2 1"/>`;
+      for (const h of st.ins) {
+        const x = st.pos(h) - st.a, cy = y0 + p.T / 2, rr = h.d / 2;
+        b += `<circle cx="${x}" cy="${cy}" r="${rr}" fill="none" stroke="#2b8a3e" stroke-width="0.3"/><line x1="${x}" y1="${y0 - 2}" x2="${x}" y2="${y0 + p.T + 2}" stroke="#2b8a3e" stroke-width="0.15"/>`;
+        b += `<text x="${x + 1}" y="${y0 + p.T + 4}" font-size="2.4" fill="#2b8a3e">${fmt(st.pos(h))} · Ø${fmt(h.d)}×${fmt(h.depth)}</text>`;
+      }
+    });
+    pages.push(tplPage(`№${g.no} ${esc(p.name)} ${fmt(p.L)}×${fmt(p.W)}×${p.T} — шаблоны на торцы (вырежи полоску и приложи к торцу)`, b));
+  }
+  return pages;
+}
+function templatesFor(groups) {
+  return groups.flatMap(g => [...faceTemplates(g, 'A'), ...faceTemplates(g, 'B'), ...edgeTemplates(g)]);
+}
+function printTemplates(groups) {
+  const pages = templatesFor(groups);
+  if (!pages.length) { toast('У детали нет отверстий'); return; }
+  $('#print').innerHTML = pages.join('');
+  document.body.classList.add('print-tpl');
+  setTimeout(() => window.print(), 50);
+}
+window.addEventListener('afterprint', () => document.body.classList.remove('print-tpl'));
+$('#btnTpl1').onclick = () => { const g = findGroup(sel.uid); if (g) printTemplates([g]); };
+$('#btnTplAll').onclick = () => printTemplates(built.groups.filter(g => g.rep.holes.length));
 
 // ---------- Печать ----------
 function buildPrint() {

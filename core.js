@@ -541,7 +541,29 @@ export function buildProject(proj) {
       qty: Number(c.qty) || 1,
     });
   });
+  warn.push(...validate(parts));
   return { parts, warn, items, off: built_off, groups: groupParts(parts) };
+}
+
+// Проверка присадки: края, глубины, торцы, прогиб полок
+export function validate(parts) {
+  const out = [];
+  for (const p of parts) {
+    const tag = `${p.item}: «${p.name}»`;
+    for (const h of p.holes) {
+      if (h.face) {
+        const m = Math.min(h.x, h.y, p.L - h.x, p.W - h.y) - h.d / 2;
+        if (m < 1.5 && !(h.type === 'conf' && m > 0)) out.push(`${tag}: отверстие Ø${h.d} (${h.x}; ${h.y}) слишком близко к краю — ${r(m)} мм.`);
+        if (!h.through && h.depth >= p.T - 1) out.push(`${tag}: глухое отверстие Ø${h.d} глубиной ${h.depth} почти насквозь при толщине ${p.T}.`);
+      } else {
+        if (p.T < h.d + 4) out.push(`${tag}: торец ${p.T} мм тонкий для отверстия Ø${h.d}.`);
+        const len = h.edge[0] === 'W' ? p.L : p.W;
+        if (h.depth > len - 5) out.push(`${tag}: отверстие в торец глубиной ${h.depth} длиннее детали (${len}).`);
+      }
+    }
+    if (/Полка/.test(p.name) && p.orient === 'H' && p.L > 800 && p.T <= 18) out.push(`${tag}: полка ${p.L} мм длиннее 800 — может прогибаться, добавь перегородку.`);
+  }
+  return [...new Set(out)];
 }
 
 export function groupParts(parts) {
