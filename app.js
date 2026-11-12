@@ -1,4 +1,4 @@
-import * as C from './core.js?v=202611120950';
+import * as C from './core.js?v=202611120953';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -122,14 +122,28 @@ const FIELDS = [
     ['matBack', 'Задняя стенка, дно ящиков', 'mat', 'thin'], ['backT', 'Толщина задней стенки', 'thk', 'thin'],
   ]],
   ['Конструкция', [
-    ['topType', 'Крышка', 'sel', [['overlay', 'Накладная'], ['inset', 'Вкладная']]],
-    ['base', 'Основание', 'sel', [['plinth', 'Цоколь'], ['legs', 'Ножки']]],
+    ['topType', 'Крышка', 'sel', [['overlay', 'Накладная'], ['inset', 'Вкладная'], ['rails', 'Царги (под столешницу)']]],
+    ['base', 'Основание', 'sel', [['plinth', 'Цоколь'], ['legs', 'Ножки'], ['hang', 'Навесной (без основания)']]],
     ['plinthH', 'Высота цоколя', 'num', p => p.base === 'plinth'],
     ['plinthSetback', 'Цоколь утоплен на', 'num', p => p.base === 'plinth'],
     ['legsH', 'Высота ножек', 'num', p => p.base === 'legs'],
     ['backType', 'Задняя стенка', 'sel', [['overlay', 'Накладная (на гвозди)'], ['groove', 'В паз'], ['none', 'Нет']]],
     ['grooveOff', 'Паз: отступ от заднего края', 'num', p => p.backType === 'groove'],
     ['grooveDepth', 'Паз: глубина', 'num', p => p.backType === 'groove'],
+  ]],
+  ['Столешница', [
+    ['worktop', 'Столешница', 'sel', [[0, 'Нет'], [1, 'Есть']]],
+    ['worktopMat', 'Материал столешницы', 'text', p => +p.worktop],
+    ['worktopT', 'Толщина', 'num', p => +p.worktop],
+    ['worktopD', 'Глубина', 'num', p => +p.worktop],
+    ['worktopOver', 'Свес перед фасадом', 'num', p => +p.worktop],
+  ]],
+  ['Шкаф-купе', [
+    ['slide', 'Двери-купе', 'sel', [[0, 'Нет'], [1, 'Да (раздвижные)']]],
+    ['slideN', 'Количество дверей', 'num', p => +p.slide],
+    ['slideOverlap', 'Перекрытие дверей', 'num', p => +p.slide],
+    ['slideTrack', 'Зона под двери (глубина)', 'num', p => +p.slide],
+    ['slideHDed', 'Дверь ниже проёма на', 'num', p => +p.slide],
   ]],
   ['Крепёж и фурнитура', [
     ['joint', 'Соединение корпуса', 'sel', Object.entries(C.JOINTS)],
@@ -255,7 +269,7 @@ function askNewMaterial(kind) {
 }
 function matColor(name, role) {
   const m = allMaterials().find(x => x.name === name);
-  return m ? m.color : { corpus: '#efe9df', front: '#c8a27a', back: '#d9d4cc', box: '#e6dccb', custom: '#e6dccb' }[role] || '#eeeeee';
+  return m ? m.color : { corpus: '#efe9df', front: '#c8a27a', back: '#d9d4cc', box: '#e6dccb', custom: '#e6dccb', worktop: '#8f8579', slide: '#c8a27a' }[role] || '#eeeeee';
 }
 
 let formTimer;
@@ -594,6 +608,9 @@ function costRows() {
     const q = P.byArea ? Math.round((s.area[m.mat] || 0) * 1.15 / SA * 100) / 100 : m.sheets.length;
     add('Плитные материалы', 'sheet:' + m.mat, `${m.mat}, лист ${project.settings.sheetL}×${project.settings.sheetW}${P.byArea ? ' (по площади +15%)' : ''}`, q, 'лист');
   }
+  const wt = {};
+  for (const g of built.groups) if (g.rep.role === 'worktop') wt[g.rep.material] = (wt[g.rep.material] || 0) + g.rep.L * g.qty / 1000;
+  for (const [m, len] of Object.entries(wt)) add('Плитные материалы', 'worktop:' + m, `${m} (погонные метры)`, Math.round(len * 100) / 100, 'м');
   for (const h of s.hw.filter(h => h[3].startsWith('edge:'))) add('Кромка', h[3], h[0], h[1], h[2]);
   add('Услуги', 'svc:cut', 'Распил (по длине реза)', s.cutLen, 'м');
   const edgeTotal = Object.values(s.edge).reduce((a, b) => a + b, 0);
@@ -712,9 +729,9 @@ function render3d() {
   const holeMat = new THREE.MeshBasicMaterial({ color: 0x333333 });
   const cupMat = new THREE.MeshBasicMaterial({ color: 0x6b6b6b });
   for (const p of parts) {
-    if (p.role === 'front' && !showF) continue;
+    if ((p.role === 'front' || p.role === 'slide') && !showF) continue;
     const size = C.worldSize(p);
-    const mat = new THREE.MeshStandardMaterial({ color: matColor(p.material, p.role), roughness: 0.8, transparent: transp && p.role !== 'front', opacity: transp && p.role !== 'front' ? 0.3 : 1, depthWrite: !(transp && p.role !== 'front') });
+    const mat = new THREE.MeshStandardMaterial({ color: matColor(p.material.replace('Дверь-купе: ', ''), p.role), roughness: 0.8, transparent: transp && !['front', 'slide', 'worktop'].includes(p.role), opacity: transp && !['front', 'slide', 'worktop'].includes(p.role) ? 0.3 : 1, depthWrite: !(transp && !['front', 'slide', 'worktop'].includes(p.role)) });
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size), mat);
     const pc = new THREE.Vector3(p.ox + size[0] / 2, p.oy + size[1] / 2, p.oz + size[2] / 2);
     let off = new THREE.Vector3();

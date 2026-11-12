@@ -80,6 +80,8 @@ const BASE = {
   backType: 'overlay', backT: 3, matBack: 'ХДФ Белый', topType: 'overlay', base: 'plinth',
   plinthH: 60, plinthSetback: 40, legsH: 100, shelfType: 'pins', shelfRecess: 10, gap: 3, gapEdge: 1.5,
   handle: 96, edgeFront: 2, edgeOther: 0.4, edgeFacade: 2,
+  slide: false, slideN: 2, slideOverlap: 30, slideTrack: 100, slideHDed: 40,
+  worktop: false, worktopT: 38, worktopD: 600, worktopOver: 20, worktopMat: 'Столешница 38 мм',
   joint: 'conf', hingeBrand: 'std', cupOffset: 21.5, cupDepth: 12, hingeEnd: 100, runner: 'roller', grooveOff: 10, grooveDepth: 8,
 };
 
@@ -101,6 +103,16 @@ export const TEMPLATES = {
     sections: [sec([blk('doors', { hinge: 'left', shelves: 5 })]), sec([blk('doors', { hinge: 'right', shelves: 2 }), blk('drawers', { h: 600, n: 3 })]), sec([blk('doors', { hinge: 'right', shelves: 1, pos: '1500' })])] } },
   shelving: { label: 'Стеллаж открытый', params: { ...BASE, name: 'Стеллаж', W: 800, H: 1800, D: 300, shelfType: 'fixed', shelfRecess: 0, handle: 0,
     sections: [sec([blk('open', { shelves: 4 })])] } },
+  kBase: { label: 'Кухня: нижний модуль с дверью', params: { ...BASE, name: 'Кухня нижний 600', W: 600, H: 720, D: 560, base: 'legs', legsH: 100, topType: 'rails', worktop: true, handle: 128,
+    sections: [sec([blk('doors', { hinge: 'left', shelves: 1 })])] } },
+  kDrawers: { label: 'Кухня: нижний с 3 ящиками', params: { ...BASE, name: 'Кухня ящики 600', W: 600, H: 720, D: 560, base: 'legs', legsH: 100, topType: 'rails', worktop: true, handle: 128,
+    sections: [sec([blk('drawers', { h: 140 }), blk('drawers', { n: 2 })])] } },
+  kSink: { label: 'Кухня: под мойку', params: { ...BASE, name: 'Кухня под мойку 800', W: 800, H: 720, D: 560, base: 'legs', legsH: 100, topType: 'rails', backType: 'none', worktop: true, handle: 128,
+    sections: [sec([blk('doors', { n: 2 })])] } },
+  kWall: { label: 'Кухня: верхний навесной', params: { ...BASE, name: 'Кухня верхний 600', W: 600, H: 720, D: 300, base: 'hang', topType: 'overlay', handle: 128, shelfRecess: 5,
+    sections: [sec([blk('doors', { n: 2, shelves: 2 })])] } },
+  coupe: { label: 'Шкаф-купе', params: { ...BASE, name: 'Шкаф-купе', W: 1800, H: 2400, D: 600, plinthH: 80, slide: true, slideN: 2, handle: 0,
+    sections: [sec([blk('open', { shelves: 5 })]), sec([blk('open', { shelves: 2 }), blk('drawers', { h: 700, n: 3 })]), sec([blk('open', { shelves: 5 })])] } },
   base: { label: 'Тумба с дверцами', params: { ...BASE, name: 'Тумба', W: 600, H: 720, D: 500, base: 'legs', legsH: 100,
     sections: [sec([blk('doors', { n: 2, shelves: 1 })])] } },
 };
@@ -190,6 +202,8 @@ export function generate(P0, hw0 = HW) {
   }
 
   const baseY = P.base === 'legs' ? num('legsH') : 0;
+  const rails = P.topType === 'rails', slide = !!P.slide;
+  const Dz = slide ? D - num('slideTrack') : D; // в купе внутренние детали заканчиваются перед дверьми
   const plinth = P.base === 'plinth' ? num('plinthH') : 0;
   const topOuter = baseY + H;
   const overlayTop = P.topType === 'overlay';
@@ -267,9 +281,14 @@ export function generate(P0, hw0 = HW) {
   };
   const joinH = h => joinBetween(h, { panel: sideL, X: t }, { panel: sideR, X: W - t });
 
-  // Крышка
-  let top;
-  if (overlayTop) {
+  // Крышка / царги
+  let top, railF, railB;
+  if (rails) {
+    const rw = Math.min(100, D / 3);
+    railB = add(panel('railB', 'Царга задняя', 'H', [t, topOuter - t, 0], innerW, rw, t, C, 'corpus'));
+    railF = add(panel('railF', 'Царга передняя', 'H', [t, topOuter - t, D - rw], innerW, rw, t, C, 'corpus', { L2: eF }));
+    joinH(railB); joinH(railF);
+  } else if (overlayTop) {
     top = add(panel('top', 'Крышка', 'H', [0, baseY + sideH, 0], W, D, t, C, 'corpus', { L2: eF, W1: eF, W2: eF, L1: eO }));
     for (const o of spots(D, hw.confEnd, hw.confStep)) {
       joint(top, sideL, [t / 2, top.oy, o], [t / 2, top.oy, pair(o, D)]);
@@ -303,7 +322,7 @@ export function generate(P0, hw0 = HW) {
     const gr = (p, axis, from, to) => (p.grooves = p.grooves || []).push({ face: innerFace(p), axis, pos: gOff, w: gw, depth: gD, from: r(from), to: r(to) });
     gr(sideL, 'y', 0, sideL.W); gr(sideR, 'y', 0, sideR.W);
     gr(bottom, 'x', 0, bottom.L);
-    if (overlayTop) gr(top, 'x', t - gD + 1, W - t + gD - 1); else gr(top, 'x', 0, top.L);
+    if (rails) { /* при царгах задняя стенка сверху без паза */ } else if (overlayTop) gr(top, 'x', t - gD + 1, W - t + gD - 1); else gr(top, 'x', 0, top.L);
     add(panel('back', 'Задняя стенка (в паз)', 'F', [t - gD + 1, innerY0 - gD + 1, gOff + 0.5], innerW + 2 * (gD - 1), innerY1 - innerY0 + 2 * (gD - 1), backT, P.matBack, 'back'));
   }
 
@@ -326,12 +345,13 @@ export function generate(P0, hw0 = HW) {
     const se = { x0: x, x1: x + w, w, def: secs[i] };
     x += w;
     if (i < ns - 1) {
-      const pt = add(panel(`part${i + 1}`, 'Перегородка вертикальная', 'S', [x, innerY0, zB], D - zB, innerY1 - innerY0, t, C, 'corpus', { W2: eF }));
-      for (const o of spots(D - zB, hw.confEnd, hw.confStep)) {
-        const z = zB + o, z2 = zB + pair(o, D - zB);
+      const pt = add(panel(`part${i + 1}`, 'Перегородка вертикальная', 'S', [x, innerY0, zB], Dz - zB, innerY1 - innerY0, t, C, 'corpus', { W2: eF }));
+      for (const o of spots(Dz - zB, hw.confEnd, hw.confStep)) {
+        const z = zB + o, z2 = zB + pair(o, Dz - zB);
         joint(bottom, pt, [x + t / 2, innerY0, z], [x + t / 2, innerY0, z2]);
-        joint(top, pt, [x + t / 2, innerY1, z], [x + t / 2, innerY1, z2]);
+        if (!rails) joint(top, pt, [x + t / 2, innerY1, z], [x + t / 2, innerY1, z2]);
       }
+      if (rails) for (const rl of [railF, railB]) if (rl.oz + rl.W / 2 > zB && rl.oz + rl.W / 2 < Dz) joint(rl, pt, [x + t / 2, innerY1, rl.oz + rl.W / 2], null);
       se.partR = pt;
       x += t;
     }
@@ -362,7 +382,7 @@ export function generate(P0, hw0 = HW) {
       if (n > 0 && clear < 80) warn.push('Полки стоят слишком часто (просвет < 80 мм).');
       ys = Array.from({ length: n }, (_, i) => y0 + clear * (i + 1) + t * i);
     }
-    const sd = D - num('shelfRecess') - zB;
+    const sd = Dz - num('shelfRecess') - zB;
     ys.forEach((sy, i) => {
       sy = r(sy);
       if (sy < y0 + 20 || sy + t > y1 - 20) { warn.push(`Полка на высоте ${r(sy - y0)} мм выходит за пределы ниши (0…${r(y1 - y0 - t)}).`); return; }
@@ -370,22 +390,23 @@ export function generate(P0, hw0 = HW) {
         joinBetween(add(panel(`${pref}sh${i + 1}`, 'Полка', 'H', [se.x0, sy, zB], se.w, sd, t, C, 'corpus', { L2: eF })), se.left, se.right);
       } else {
         add(panel(`${pref}sh${i + 1}`, 'Полка', 'H', [se.x0 + 1, sy, zB], se.w - 2, sd, t, C, 'corpus', { L2: eF }));
-        for (const side of [se.left, se.right]) for (const Z of [D - hw.pinFront, zB + hw.pinBack]) pinHole(side, [side.X, sy - hw.pinBelow, Z]);
+        for (const side of [se.left, se.right]) for (const Z of [Dz - hw.pinFront, zB + hw.pinBack]) pinHole(side, [side.X, sy - hw.pinBelow, Z]);
       }
     });
   };
 
   const makeDrawer = (se, id, fy, fh, zoneBot) => {
-    const fxw = se.fxR - se.fxL;
-    const f = add(panel(`${id}f`, 'Фасад ящика', 'F', [se.fxL, fy, D], fxw, fh, fT, P.matFront, 'front', { L1: eFac, L2: eFac, W1: eFac, W2: eFac }));
-    runnerLen = RUN.lens.find(l => l <= D - zB - 10) || 0;
+    const fxw = slide ? se.w - 4 : se.fxR - se.fxL;
+    const fz = slide ? Dz - fT : D; // в купе — внутренний (вкладной) фасад за дверьми
+    const f = add(panel(`${id}f`, slide ? 'Фасад внутреннего ящика' : 'Фасад ящика', 'F', [slide ? se.x0 + 2 : se.fxL, fy, fz], fxw, fh, fT, P.matFront, 'front', { L1: eFac, L2: eFac, W1: eFac, W2: eFac }));
+    runnerLen = RUN.lens.find(l => l <= fz - zB - 10) || 0;
     if (!runnerLen) { warn.push(`Глубина ${D} мм мала для направляющих (мин. 260).`); return; }
     const rg = RUN.gap, bt = t, x0 = se.x0 + rg, bw = se.w - 2 * rg;
     if (bw < 100) { warn.push('Секция слишком узкая для ящика.'); return; }
     let bh = Math.floor(fh - RUN.boxMinus);
     if (bh < 60) { warn.push(`Фасад ящика ${r(fh)} мм слишком низкий, высота короба принята 60 мм.`); bh = 60; }
     const by = Math.max(fy + 25, zoneBot + 5);
-    const z0 = D - 2 - runnerLen;
+    const z0 = fz - 2 - runnerLen;
     const sL = add(panel(`${id}sL`, 'Ящик: боковина левая', 'S', [x0, by, z0], runnerLen, bh, bt, C, 'box', { L2: eO }));
     const sR = add(panel(`${id}sR`, 'Ящик: боковина правая', 'S', [x0 + bw - bt, by, z0], runnerLen, bh, bt, C, 'box', { L2: eO }));
     const bk = add(panel(`${id}bk`, 'Ящик: задняя стенка', 'F', [x0 + bt, by, z0], bw - 2 * bt, bh, bt, C, 'box', { L2: eO }));
@@ -396,7 +417,7 @@ export function generate(P0, hw0 = HW) {
       conf(sL, bp, [x0 + bt, by + o, bp.oz + bt / 2]);
       conf(sR, bp, [x0 + bw - bt, by + o, bp.oz + bt / 2]);
     }
-    if (handle > 0 && fxw > handle + 40) {
+    if (handle > 0 && fxw > handle + 40 && !slide) {
       for (const dx of [-handle / 2, handle / 2]) {
         const hx = f.L / 2 + dx, hy = fh / 2;
         f.holes.push({ type: 'handle', face: 'A', x: r(hx), y: r(hy), d: hw.handleD, depth: fT, through: true });
@@ -468,7 +489,7 @@ export function generate(P0, hw0 = HW) {
       const nx = Z[j + 1], center = z.fyBot - g / 2;
       if (z.b.type === 'drawers' && nx.b.type === 'drawers') { z.bot = center; z.botBound = center; }
       else {
-        const dv = add(panel(`s${i + 1}dv${j + 1}`, 'Полка-перегородка', 'H', [se.x0, r(center - t / 2), zB], se.w, D - zB, t, C, 'corpus', { L2: eF }));
+        const dv = add(panel(`s${i + 1}dv${j + 1}`, 'Полка-перегородка', 'H', [se.x0, r(center - t / 2), zB], se.w, Dz - zB, t, C, 'corpus', { L2: eF }));
         joinBetween(dv, se.left, se.right);
         z.bot = dv.oy + t; z.botBound = dv.oy;
       }
@@ -476,23 +497,47 @@ export function generate(P0, hw0 = HW) {
     Z.forEach((z, j) => {
       const id = `s${i + 1}b${j + 1}`;
       if (z.b.type === 'drawers') {
-        const n = Math.max(1, Number(z.b.n) || 1), fh = (z.fyTop - z.fyBot - (n - 1) * g) / n;
-        for (let k = 0; k < n; k++) makeDrawer(se, `${id}x${k + 1}`, z.fyTop - (k + 1) * fh - k * g, fh, k === n - 1 ? z.bot : 0);
+        const n = Math.max(1, Number(z.b.n) || 1);
+        const yT = slide ? z.top - 2 : z.fyTop, yB = slide ? z.bot + 2 : z.fyBot;
+        const fh = (yT - yB - (n - 1) * g) / n;
+        for (let k = 0; k < n; k++) makeDrawer(se, `${id}x${k + 1}`, yT - (k + 1) * fh - k * g, fh, k === n - 1 ? z.bot : 0);
       } else {
-        if (z.b.type === 'doors') doorJobs.push(() => makeDoors(se, z.b, id, z.fyBot, z.fyTop));
+        if (z.b.type === 'doors' && !slide) doorJobs.push(() => makeDoors(se, z.b, id, z.fyBot, z.fyTop));
         shelvesIn(se, z.b, z.bot, z.top, id);
       }
     });
   });
   doorJobs.forEach(f => f()); // двери после полок: планки петель обходят полкодержатели
 
+  // Двери-купе: проём между боковинами, от дна до крышки
+  let slideInfo = null;
+  if (slide) {
+    const n = Math.max(2, Number(P.slideN) || 2), ov = num('slideOverlap'), openW = innerW, openH = innerY1 - innerY0;
+    const dw = r((openW + (n - 1) * ov) / n), dh = r(openH - num('slideHDed'));
+    for (let k = 0; k < n; k++) {
+      const track = k % 2; // 0 — задний путь, 1 — передний
+      add(panel(`slide${k + 1}`, 'Дверь-купе', 'F', [t + k * (dw - ov), innerY0 + num('slideHDed') / 2, D - 25 - track * 35], dw, dh, 10,
+        `Дверь-купе: ${P.matFront}`, 'slide', {}, { noNest: true }));
+    }
+    slideInfo = { n, dw, dh, openW: r(openW), openH: r(openH) };
+    if (B_hasDoors(secs)) warn.push('В шкафу-купе блоки «Двери» работают как ниши — распашных дверей нет.');
+  }
+
+  // Столешница
+  if (P.worktop) {
+    const wd = num('worktopD'), z1 = D + fT + num('worktopOver');
+    add(panel('worktop', 'Столешница', 'H', [0, topOuter, z1 - wd], W, wd, num('worktopT'), P.worktopMat || 'Столешница 38 мм', 'worktop', {}, { noNest: true }));
+  }
+
   const legs = P.base === 'legs' ? (W > 1000 ? 6 : 4) : 0;
   return {
     parts, warn,
-    dims: { W, H: topOuter, D: D + (P.backType === 'overlay' ? backT : 0) + (parts.some(p => p.role === 'front') ? fT : 0) },
-    extra: { joint: SYS, runnerLabel: RUN.label, hingeLabel: (HINGES[P.hingeBrand] || {}).label || 'своя', secInfo: S.map(se => ({ w: r(se.w), blocks: (se.zones || []).map(z => r(z.h)) })), drawers: drawerCount, runnerLen, legs, legsH: baseY, handle, hingesFull, hingesHalf },
+    dims: { W, H: topOuter + (P.worktop ? num('worktopT') : 0), D: Math.max(D + (P.backType === 'overlay' ? backT : 0) + (parts.some(p => p.role === 'front' && p.oz >= D) ? fT : 0), P.worktop ? num('worktopD') + (P.backType === 'overlay' ? backT : 0) : 0) },
+    extra: { slide: slideInfo, hang: P.base === 'hang', joint: SYS, runnerLabel: RUN.label, hingeLabel: (HINGES[P.hingeBrand] || {}).label || 'своя', secInfo: S.map(se => ({ w: r(se.w), blocks: (se.zones || []).map(z => r(z.h)) })), drawers: drawerCount, runnerLen, legs, legsH: baseY, handle, hingesFull, hingesHalf },
   };
 }
+
+const B_hasDoors = secs => secs.some(s => (s.blocks || []).some(b => b.type === 'doors'));
 
 export function holeSig(p) {
   return p.holes.map(h => [h.face || h.edge, h.x, h.y, h.d, h.depth, h.through ? 1 : 0].join(',')).sort().join('|');
@@ -599,7 +644,7 @@ export function summary(built, proj) {
     const p = g.rep, q = g.qty, k = matKey(p);
     holes += p.holes.length * q;
     cutLen += ((p.L + p.W) * q) / 1000;
-    area[k] = (area[k] || 0) + (p.L * p.W * q) / 1e6;
+    if (!p.noNest) area[k] = (area[k] || 0) + (p.L * p.W * q) / 1e6;
     for (const [e, v] of Object.entries(p.edges)) if (v > 0) {
       const len = e[0] === 'L' ? p.L : p.W;
       edge[v] = (edge[v] || 0) + (len * q) / 1000;
@@ -629,6 +674,13 @@ export function summary(built, proj) {
     const name = proj.items[i].params.name;
     if (g.extra?.drawers) hw.push([`Направляющие ${g.extra.runnerLabel}, L=${g.extra.runnerLen} (${name})`, g.extra.drawers, 'пар', `runner:${g.extra.runnerLabel}:${g.extra.runnerLen}`]);
     if (g.extra?.legs) hw.push([`Ножки мебельные H=${g.extra.legsH} (${name})`, g.extra.legs, 'шт', `legs:${g.extra.legsH}`]);
+    if (g.extra?.hang) hw.push([`Навес (подвес) мебельный регулируемый (${name})`, 2, 'шт', 'hanger']);
+    const sl = g.extra?.slide;
+    if (sl) {
+      hw.push([`Дверь-купе ${sl.dw}×${sl.dh} (профиль + наполнение) (${name})`, sl.n, 'шт', `slideDoor:${sl.dw}x${sl.dh}`]);
+      hw.push([`Направляющие купе верхняя + нижняя L=${sl.openW} (${name})`, 1, 'компл', `slideRail`]);
+      hw.push([`Ролики купе (комплект на дверь) (${name})`, sl.n, 'компл', 'slideRollers']);
+    }
   });
   if (handles) hw.push(['Ручка (межосевое по проекту) + винты М4', handles, 'шт', 'handle']);
   if (backScrews) hw.push(['Саморез/гвоздь для ХДФ (задняя стенка, дно ящиков)', backScrews, 'шт', 'backScrew']);
@@ -642,6 +694,7 @@ export function nest(built, S) {
   const byMat = new Map();
   for (const g of built.groups) {
     const p = g.rep, k = matKey(p), cs = cutSize(p, S);
+    if (p.noNest) continue;
     if (!byMat.has(k)) byMat.set(k, []);
     for (let i = 0; i < g.qty; i++) byMat.get(k).push({ w: cs.L, h: cs.W, no: g.no, name: p.name });
   }
@@ -738,6 +791,7 @@ export function exportRows(built, S, cfg) {
   const rows = [cols.map(c => c[0])];
   for (const g of built.groups) {
     const p = g.rep, cs = cutSize(p, S), e = p.edges;
+    if (p.role === 'slide') continue;
     const longE = ['L1', 'L2'], shortE = ['W1', 'W2'];
     const v = {
       no: g.no, item: p.item, name: p.name, material: p.material, T: p.T, L: p.L, W: p.W, cutL: cs.L, cutW: cs.W, qty: g.qty,
