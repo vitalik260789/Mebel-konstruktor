@@ -63,18 +63,46 @@ export const THICKNESSES = { plate: [8, 10, 12, 15, 16, 18, 19, 22, 25, 28, 32],
 const BASE = {
   type: 'cabinet', t: 16, matCorpus: 'ЛДСП Белый', frontT: 16, matFront: 'ЛДСП Дуб Сонома',
   backType: 'overlay', backT: 3, matBack: 'ХДФ Белый', topType: 'overlay', base: 'plinth',
-  plinthH: 60, plinthSetback: 40, legsH: 100, layout: 'doors', doors: 1, hingeSide: 'left',
-  drawers: 1, drawerFrontH: 150, shelves: 1, shelfType: 'pins', shelfRecess: 10, gap: 3, gapEdge: 1.5,
+  plinthH: 60, plinthSetback: 40, legsH: 100, shelfType: 'pins', shelfRecess: 10, gap: 3, gapEdge: 1.5,
   handle: 96, edgeFront: 2, edgeOther: 0.4, edgeFacade: 2, runnerGap: 13,
 };
 
+// Блок наполнения секции (сверху вниз): type: drawers | doors | open; h — высота зоны по фасаду (0 = авто);
+// n — число ящиков или дверей; hinge — сторона петель для одной двери; shelves — число полок; pos — высоты полок вручную.
+export const blk = (type, o = {}) => ({ type, h: 0, n: 1, hinge: 'left', shelves: 0, pos: '', ...o });
+export const sec = (blocks, w = 0) => ({ w, blocks });
+
 export const TEMPLATES = {
-  nightstand: { label: 'Тумба прикроватная', params: { ...BASE, name: 'Тумба прикроватная', W: 450, H: 550, D: 400, layout: 'drawers+doors', drawers: 1, drawerFrontH: 150, doors: 1, shelves: 1 } },
-  dresser: { label: 'Комод с ящиками', params: { ...BASE, name: 'Комод', W: 800, H: 850, D: 450, layout: 'drawers', drawers: 4, shelves: 0, handle: 128 } },
-  wardrobe: { label: 'Шкаф 2-дверный', params: { ...BASE, name: 'Шкаф', W: 800, H: 2000, D: 550, plinthH: 80, layout: 'doors', doors: 2, shelves: 4, handle: 128 } },
-  shelving: { label: 'Стеллаж открытый', params: { ...BASE, name: 'Стеллаж', W: 800, H: 1800, D: 300, layout: 'none', shelves: 4, shelfType: 'fixed', shelfRecess: 0, handle: 0 } },
-  base: { label: 'Тумба с дверцами', params: { ...BASE, name: 'Тумба', W: 600, H: 720, D: 500, layout: 'doors', doors: 2, shelves: 1, base: 'legs', legsH: 100 } },
+  nightstand: { label: 'Тумба прикроватная', params: { ...BASE, name: 'Тумба прикроватная', W: 450, H: 550, D: 400,
+    sections: [sec([blk('drawers', { h: 150 }), blk('doors', { shelves: 1 })])] } },
+  dresser: { label: 'Комод с ящиками', params: { ...BASE, name: 'Комод', W: 800, H: 850, D: 450, handle: 128,
+    sections: [sec([blk('drawers', { n: 4 })])] } },
+  tv: { label: 'Тумба под ТВ (3 секции)', params: { ...BASE, name: 'Тумба под ТВ', W: 1500, H: 450, D: 400, base: 'legs', legsH: 100, handle: 128,
+    sections: [sec([blk('doors', { hinge: 'left', shelves: 1 })], 450), sec([blk('open', { h: 200 }), blk('drawers')]), sec([blk('doors', { hinge: 'right', shelves: 1 })], 450)] } },
+  wardrobe: { label: 'Шкаф 2-дверный', params: { ...BASE, name: 'Шкаф', W: 800, H: 2000, D: 550, plinthH: 80, handle: 128,
+    sections: [sec([blk('doors', { n: 2, shelves: 4 })])] } },
+  wardrobe3: { label: 'Шкаф 3-секционный', params: { ...BASE, name: 'Шкаф 3-секционный', W: 1200, H: 2100, D: 580, plinthH: 80, handle: 128,
+    sections: [sec([blk('doors', { hinge: 'left', shelves: 5 })]), sec([blk('doors', { hinge: 'right', shelves: 2 }), blk('drawers', { h: 600, n: 3 })]), sec([blk('doors', { hinge: 'right', shelves: 1, pos: '1500' })])] } },
+  shelving: { label: 'Стеллаж открытый', params: { ...BASE, name: 'Стеллаж', W: 800, H: 1800, D: 300, shelfType: 'fixed', shelfRecess: 0, handle: 0,
+    sections: [sec([blk('open', { shelves: 4 })])] } },
+  base: { label: 'Тумба с дверцами', params: { ...BASE, name: 'Тумба', W: 600, H: 720, D: 500, base: 'legs', legsH: 100,
+    sections: [sec([blk('doors', { n: 2, shelves: 1 })])] } },
 };
+
+// Старые проекты (до секций) переводим в секции
+export function normalizeParams(P0) {
+  const P = { ...BASE, ...P0 };
+  if (Array.isArray(P.sections) && P.sections.length) return P;
+  const L = P.layout || 'doors', g = Number(P.gap) || 3;
+  const doors = blk('doors', { n: Number(P.doors) || 1, hinge: P.hingeSide || 'left', shelves: Number(P.shelves) || 0 });
+  if (L === 'drawers') P.sections = [sec([blk('drawers', { n: Number(P.drawers) || 1 })])];
+  else if (L === 'drawers+doors') {
+    const n = Number(P.drawers) || 1;
+    P.sections = [sec([blk('drawers', { n, h: n * (Number(P.drawerFrontH) || 150) + (n - 1) * g }), doors])];
+  } else if (L === 'none') P.sections = [sec([blk('open', { shelves: Number(P.shelves) || 0 })])];
+  else P.sections = [sec([doors])];
+  return P;
+}
 
 export const ORIENT = {
   H: { x: 0, y: 2, z: 1 },
@@ -130,7 +158,7 @@ function hingeCount(h) { return h <= 900 ? 2 : h <= 1600 ? 3 : h <= 2000 ? 4 : 5
 
 // Генерация корпусного изделия по параметрам
 export function generate(P0, hw = HW) {
-  const P = { ...BASE, ...P0 };
+  const P = normalizeParams(P0);
   const num = k => Number(P[k]) || 0;
   const t = num('t'), W = num('W'), H = num('H'), D = num('D');
   const warn = [], parts = [];
@@ -170,27 +198,43 @@ export function generate(P0, hw = HW) {
   const sideL = add(panel('sideL', 'Боковина левая', 'S', [0, baseY, 0], D, sideH, t, C, 'corpus', sideEdges));
   const sideR = add(panel('sideR', 'Боковина правая', 'S', [W - t, baseY, 0], D, sideH, t, C, 'corpus', sideEdges));
 
-  const joinH = h => {
-    for (const o of spots(h.W, hw.confEnd, hw.confStep)) {
-      const Y = h.oy + h.T / 2, Z = h.oz + o;
-      conf(sideL, h, [t, Y, Z]);
-      conf(sideR, h, [W - t, Y, Z]);
+  // Есть ли уже отверстие в проекции этой точки (любая пласть) — чтобы сверления не встречались внутри плиты
+  const clash = (p, w, d) => {
+    const l = toLocal(p, w);
+    return p.holes.some(h => h.face && Math.hypot(h.x - l.x, h.y - l.y) < (h.d + d) / 2 + 3);
+  };
+  const SHIFTS = [0, 32, -32, 64, -64, 96, -96];
+  // Горизонтальная деталь между двумя вертикальными (боковина/перегородка): {panel, X} слева и справа
+  const joinBetween = (h, left, right) => {
+    for (const side of [left, right]) {
+      for (const o of spots(h.W, hw.confEnd, hw.confStep)) {
+        const Y = h.oy + h.T / 2;
+        let z = h.oz + o;
+        const sh = SHIFTS.find(dz => { const zz = z + dz; return zz > h.oz + 20 && zz < h.oz + h.W - 20 && !clash(side.panel, [side.X, Y, zz], hw.confFaceD); });
+        if (sh === undefined) warn.push(`${h.name}: конфирмат пересекается с другим отверстием.`);
+        z += sh || 0;
+        conf(side.panel, h, [side.X, Y, z]);
+      }
     }
   };
+  const joinH = h => joinBetween(h, { panel: sideL, X: t }, { panel: sideR, X: W - t });
 
   // Крышка
+  let top;
   if (overlayTop) {
-    const top = add(panel('top', 'Крышка', 'H', [0, baseY + sideH, 0], W, D, t, C, 'corpus', { L2: eF, W1: eF, W2: eF, L1: eO }));
+    top = add(panel('top', 'Крышка', 'H', [0, baseY + sideH, 0], W, D, t, C, 'corpus', { L2: eF, W1: eF, W2: eF, L1: eO }));
     for (const o of spots(D, hw.confEnd, hw.confStep)) {
       conf(top, sideL, [t / 2, top.oy, o]);
       conf(top, sideR, [W - t / 2, top.oy, o]);
     }
   } else {
-    joinH(add(panel('top', 'Крышка', 'H', [t, topOuter - t, 0], innerW, D, t, C, 'corpus', { L2: eF })));
+    top = add(panel('top', 'Крышка', 'H', [t, topOuter - t, 0], innerW, D, t, C, 'corpus', { L2: eF }));
+    joinH(top);
   }
 
   // Дно
-  joinH(add(panel('bottom', 'Дно', 'H', [t, bottomY, 0], innerW, D, t, C, 'corpus', { L2: eF })));
+  const bottom = add(panel('bottom', 'Дно', 'H', [t, bottomY, 0], innerW, D, t, C, 'corpus', { L2: eF }));
+  joinH(bottom);
 
   // Цоколь
   if (plinth > 0) {
@@ -208,40 +252,101 @@ export function generate(P0, hw = HW) {
     add(panel('back', 'Задняя стенка', 'F', [2, bottomY + 2, -backT], W - 4, topOuter - bottomY - 4, backT, P.matBack, 'back'));
   }
 
-  // Фасады
-  const g = num('gap'), ge = num('gapEdge'), fT = num('frontT');
-  const fx0 = ge, fx1 = W - ge, fy0 = bottomY + ge, fy1 = topOuter - ge;
-  const handle = num('handle');
-  let shelfTop = innerY1;
-  let drawerCount = 0, runnerLen = 0;
+  // ---------- Секции, фасады, наполнение ----------
+  const g = num('gap'), ge = num('gapEdge'), fT = num('frontT'), handle = num('handle');
+  const fy0 = bottomY + ge, fy1 = topOuter - ge;
+  const secs = P.sections.length ? P.sections : [sec([blk('open')])];
+  const ns = secs.length;
+  const avail = innerW - (ns - 1) * t;
+  const fixedW = secs.reduce((a, s) => a + (Number(s.w) > 0 ? Number(s.w) : 0), 0);
+  const autoN = secs.filter(s => !(Number(s.w) > 0)).length;
+  const autoW = autoN ? (avail - fixedW) / autoN : 0;
+  if (autoN && autoW < 100) warn.push(`Секции не помещаются: на авто-секции остаётся ${r(autoW)} мм.`);
+  if (!autoN && Math.abs(fixedW - avail) > 0.5) warn.push(`Сумма ширин секций ${r(fixedW)} мм ≠ внутренней ширине ${r(avail)} мм — последняя секция подогнана.`);
+  let drawerCount = 0, runnerLen = 0, hingesFull = 0, hingesHalf = 0;
+  let x = t;
+  const S = [];
+  for (let i = 0; i < ns; i++) {
+    const w = i === ns - 1 ? W - t - x : (Number(secs[i].w) > 0 ? Number(secs[i].w) : autoW);
+    const se = { x0: x, x1: x + w, w, def: secs[i] };
+    x += w;
+    if (i < ns - 1) {
+      const pt = add(panel(`part${i + 1}`, 'Перегородка вертикальная', 'S', [x, innerY0, 0], D, innerY1 - innerY0, t, C, 'corpus', { W2: eF }));
+      for (const o of spots(D, hw.confEnd, hw.confStep)) {
+        conf(bottom, pt, [x + t / 2, innerY0, o]);
+        conf(top, pt, [x + t / 2, innerY1, o]);
+      }
+      se.partR = pt;
+      x += t;
+    }
+    S.push(se);
+  }
+  S.forEach((se, i) => {
+    se.left = i === 0 ? { panel: sideL, X: t, half: false } : { panel: S[i - 1].partR, X: S[i - 1].partR.ox + t, half: true };
+    se.right = i === ns - 1 ? { panel: sideR, X: W - t, half: false } : { panel: se.partR, X: se.partR.ox, half: true };
+    se.fxL = i === 0 ? ge : S[i - 1].partR.ox + t / 2 + g / 2;
+    se.fxR = i === ns - 1 ? W - ge : se.partR.ox + t / 2 - g / 2;
+  });
 
-  const makeDrawer = (i, fy, fh) => {
-    const f = add(panel(`dfront${i + 1}`, 'Фасад ящика', 'F', [fx0, fy, D], fx1 - fx0, fh, fT, P.matFront, 'front',
-      { L1: eFac, L2: eFac, W1: eFac, W2: eFac }));
+  const pinHole = (side, w) => {
+    const l = toLocal(side.panel, w);
+    const ex = side.panel.holes.find(h => h.type === 'pin' && h.face && Math.hypot(h.x - l.x, h.y - l.y) < 1);
+    if (ex) { ex.through = true; ex.depth = side.panel.T; return; }
+    if (clash(side.panel, w, hw.pinD)) warn.push(`${side.panel.name}: полкодержатель на высоте ${r(w[1])} пересекается с другим отверстием.`);
+    faceHole(side.panel, w, { type: 'pin', d: hw.pinD, depth: hw.pinDepth });
+  };
+
+  const shelvesIn = (se, b, y0, y1, pref) => {
+    const n = Math.max(0, Number(b.shelves) || 0);
+    let ys;
+    const manual = String(b.pos || '').split(/[;, ]+/).map(Number).filter(v => v > 0);
+    if (manual.length) ys = manual.map(v => y0 + v);
+    else {
+      const clear = (y1 - y0 - n * t) / (n + 1);
+      if (n > 0 && clear < 80) warn.push('Полки стоят слишком часто (просвет < 80 мм).');
+      ys = Array.from({ length: n }, (_, i) => y0 + clear * (i + 1) + t * i);
+    }
+    const sd = D - num('shelfRecess');
+    ys.forEach((sy, i) => {
+      sy = r(sy);
+      if (sy < y0 + 20 || sy + t > y1 - 20) { warn.push(`Полка на высоте ${r(sy - y0)} мм выходит за пределы ниши (0…${r(y1 - y0 - t)}).`); return; }
+      if (P.shelfType === 'fixed') {
+        joinBetween(add(panel(`${pref}sh${i + 1}`, 'Полка', 'H', [se.x0, sy, 0], se.w, sd, t, C, 'corpus', { L2: eF })), se.left, se.right);
+      } else {
+        add(panel(`${pref}sh${i + 1}`, 'Полка', 'H', [se.x0 + 1, sy, 0], se.w - 2, sd, t, C, 'corpus', { L2: eF }));
+        for (const side of [se.left, se.right]) for (const Z of [D - hw.pinFront, hw.pinBack]) pinHole(side, [side.X, sy - hw.pinBelow, Z]);
+      }
+    });
+  };
+
+  const makeDrawer = (se, id, fy, fh, zoneBot) => {
+    const fxw = se.fxR - se.fxL;
+    const f = add(panel(`${id}f`, 'Фасад ящика', 'F', [se.fxL, fy, D], fxw, fh, fT, P.matFront, 'front', { L1: eFac, L2: eFac, W1: eFac, W2: eFac }));
     const lens = [650, 600, 550, 500, 450, 400, 350, 300, 250];
     runnerLen = lens.find(l => l <= D - 10) || 0;
     if (!runnerLen) { warn.push(`Глубина ${D} мм мала для направляющих (мин. 260).`); return; }
-    const rg = num('runnerGap'), bt = t, x0 = t + rg, bw = innerW - 2 * rg;
+    const rg = num('runnerGap'), bt = t, x0 = se.x0 + rg, bw = se.w - 2 * rg;
+    if (bw < 100) { warn.push('Секция слишком узкая для ящика.'); return; }
     let bh = Math.floor(fh - 50);
-    if (bh < 60) { warn.push(`Ящик ${i + 1}: фасад ${r(fh)} мм слишком низкий, высота короба принята 60 мм.`); bh = 60; }
-    const by = Math.max(fy + 25, innerY0 + 5);
+    if (bh < 60) { warn.push(`Фасад ящика ${r(fh)} мм слишком низкий, высота короба принята 60 мм.`); bh = 60; }
+    const by = Math.max(fy + 25, zoneBot + 5);
     const z0 = D - 2 - runnerLen;
-    const sL = add(panel(`d${i + 1}sL`, 'Ящик: боковина левая', 'S', [x0, by, z0], runnerLen, bh, bt, C, 'box', { L2: eO }));
-    const sR = add(panel(`d${i + 1}sR`, 'Ящик: боковина правая', 'S', [x0 + bw - bt, by, z0], runnerLen, bh, bt, C, 'box', { L2: eO }));
-    const bk = add(panel(`d${i + 1}back`, 'Ящик: задняя стенка', 'F', [x0 + bt, by, z0], bw - 2 * bt, bh, bt, C, 'box', { L2: eO }));
-    const fr = add(panel(`d${i + 1}front`, 'Ящик: передняя стенка', 'F', [x0 + bt, by, z0 + runnerLen - bt], bw - 2 * bt, bh, bt, C, 'box', { L2: eO }));
-    add(panel(`d${i + 1}bot`, 'Ящик: дно', 'H', [x0, by - backT, z0], bw, runnerLen, backT, P.matBack, 'back'));
+    const sL = add(panel(`${id}sL`, 'Ящик: боковина левая', 'S', [x0, by, z0], runnerLen, bh, bt, C, 'box', { L2: eO }));
+    const sR = add(panel(`${id}sR`, 'Ящик: боковина правая', 'S', [x0 + bw - bt, by, z0], runnerLen, bh, bt, C, 'box', { L2: eO }));
+    const bk = add(panel(`${id}bk`, 'Ящик: задняя стенка', 'F', [x0 + bt, by, z0], bw - 2 * bt, bh, bt, C, 'box', { L2: eO }));
+    const fr = add(panel(`${id}fr`, 'Ящик: передняя стенка', 'F', [x0 + bt, by, z0 + runnerLen - bt], bw - 2 * bt, bh, bt, C, 'box', { L2: eO }));
+    add(panel(`${id}bt`, 'Ящик: дно', 'H', [x0, by - backT, z0], bw, runnerLen, backT, P.matBack, 'back'));
     const offs = bh >= 100 ? [hw.boxConfEnd, bh - hw.boxConfEnd] : [bh / 2];
     for (const o of offs) for (const bp of [bk, fr]) {
       conf(sL, bp, [x0 + bt, by + o, bp.oz + bt / 2]);
       conf(sR, bp, [x0 + bw - bt, by + o, bp.oz + bt / 2]);
     }
-    if (handle > 0) {
+    if (handle > 0 && fxw > handle + 40) {
       for (const dx of [-handle / 2, handle / 2]) {
         const hx = f.L / 2 + dx, hy = fh / 2;
         f.holes.push({ type: 'handle', face: 'A', x: r(hx), y: r(hy), d: hw.handleD, depth: fT, through: true });
-        const w = toWorld(f, { x: hx, y: hy, z: 0 });
-        const lb = toLocal(fr, [w[0], w[1], fr.oz]);
+        const wpt = toWorld(f, { x: hx, y: hy, z: 0 });
+        const lb = toLocal(fr, [wpt[0], wpt[1], fr.oz]);
         if (lb.x > 0 && lb.x < fr.L && lb.y > 0 && lb.y < fr.W)
           fr.holes.push({ type: 'handle', face: 'A', x: r(lb.x), y: r(lb.y), d: hw.handleD, depth: bt, through: true });
       }
@@ -249,74 +354,88 @@ export function generate(P0, hw = HW) {
     drawerCount++;
   };
 
-  let doorTop = fy1;
-  if (P.layout === 'drawers') {
-    const n = Math.max(1, num('drawers'));
-    const fh = (fy1 - fy0 - (n - 1) * g) / n;
-    for (let i = 0; i < n; i++) makeDrawer(i, fy1 - (i + 1) * fh - i * g, fh);
-  } else if (P.layout === 'drawers+doors') {
-    const n = Math.max(1, num('drawers')), fh = num('drawerFrontH');
-    let lastY = fy1;
-    for (let i = 0; i < n; i++) { lastY = fy1 - (i + 1) * fh - i * g; makeDrawer(i, lastY, fh); }
-    doorTop = lastY - g;
-    const div = add(panel('divider', 'Перегородка', 'H', [t, lastY - g / 2 - t / 2, 0], innerW, D, t, C, 'corpus', { L2: eF }));
-    joinH(div);
-    shelfTop = div.oy;
-    if (doorTop - fy0 < 150) warn.push('Под ящиками слишком мало места для двери.');
-  }
-
-  if (P.layout === 'doors' || P.layout === 'drawers+doors') {
-    const n = Math.min(2, Math.max(1, num('doors')));
-    const dw = (fx1 - fx0 - (n - 1) * g) / n, dh = doorTop - fy0;
-    if (dw > 600) warn.push(`Ширина двери ${r(dw)} мм — больше 600, лучше сделать 2 двери.`);
-    for (let i = 0; i < n; i++) {
-      const hinge = n === 1 ? P.hingeSide : i === 0 ? 'left' : 'right';
-      const door = add(panel(`door${i + 1}`, n > 1 ? `Дверь ${i === 0 ? 'левая' : 'правая'}` : 'Дверь', 'F',
-        [fx0 + i * (dw + g), fy0, D], dw, dh, fT, P.matFront, 'front', { L1: eFac, L2: eFac, W1: eFac, W2: eFac }, { hinge }));
+  const makeDoors = (se, b, id, dy0, dy1) => {
+    const n = Math.min(2, Math.max(1, Number(b.n) || 1));
+    const fxw = se.fxR - se.fxL;
+    const dw = (fxw - (n - 1) * g) / n, dh = dy1 - dy0;
+    if (dw > 600) warn.push(`Ширина двери ${r(dw)} мм — больше 600, лучше 2 двери.`);
+    if (dh < 150) { warn.push('Слишком низкая зона для двери.'); return; }
+    for (let k = 0; k < n; k++) {
+      const hinge = n === 1 ? (b.hinge || 'left') : k === 0 ? 'left' : 'right';
+      const side = hinge === 'left' ? se.left : se.right;
+      const nm = n > 1 ? (k === 0 ? 'Дверь левая' : 'Дверь правая') : 'Дверь';
+      const door = add(panel(`${id}d${k + 1}`, nm, 'F', [se.fxL + k * (dw + g), dy0, D], dw, dh, fT, P.matFront, 'front',
+        { L1: eFac, L2: eFac, W1: eFac, W2: eFac }, { hinge, hingeType: side.half ? 'half' : 'full' }));
       const hc = hingeCount(dh), e = hw.hingeEnd;
-      const side = hinge === 'left' ? sideL : sideR, X = hinge === 'left' ? t : W - t;
-      for (let k = 0; k < hc; k++) {
-        const hy = r(e + ((dh - 2 * e) * k) / (hc - 1));
+      for (let q = 0; q < hc; q++) {
+        let hy = e + ((dh - 2 * e) * q) / (hc - 1);
+        const fits = yy => [-hw.plateSpacing / 2, hw.plateSpacing / 2].every(dd => !clash(side.panel, [side.X, door.oy + yy + dd, D - hw.plateFront], hw.plateD));
+        const sh = SHIFTS.find(dz => hy + dz > 60 && hy + dz < dh - 60 && fits(hy + dz));
+        if (sh === undefined) warn.push(`${nm}: планка петли пересекается с другими отверстиями на ${side.panel.name.toLowerCase()}.`);
+        hy = r(hy + (sh || 0));
         door.holes.push({ type: 'cup', face: 'B', x: r(hinge === 'left' ? hw.cupOffset : dw - hw.cupOffset), y: hy, d: hw.cupD, depth: hw.cupDepth });
         const wy = door.oy + hy;
-        if (wy < innerY0 || wy > innerY1) warn.push(`Петля на высоте ${r(wy)} мм попадает вне внутреннего объёма.`);
-        for (const dy of [-hw.plateSpacing / 2, hw.plateSpacing / 2])
-          faceHole(side, [X, wy + dy, D - hw.plateFront], { type: 'plate', d: hw.plateD, depth: hw.plateDepth });
+        if (wy < innerY0 || wy > innerY1) warn.push(`Петля на высоте ${r(wy)} мм вне внутреннего объёма.`);
+        for (const dd of [-hw.plateSpacing / 2, hw.plateSpacing / 2])
+          faceHole(side.panel, [side.X, wy + dd, D - hw.plateFront], { type: 'plate', d: hw.plateD, depth: hw.plateDepth });
+        if (side.half) hingesHalf++; else hingesFull++;
       }
       if (handle > 0) {
         const hx = hinge === 'left' ? dw - 40 : 40;
-        let yc = dh < 1000 ? dh - 60 - handle / 2 : 1000 - fy0;
+        let yc = dh < 1000 ? dh - 60 - handle / 2 : 1000 - dy0;
         yc = Math.min(Math.max(yc, handle / 2 + 40), dh - handle / 2 - 40);
-        for (const dy of [-handle / 2, handle / 2])
-          door.holes.push({ type: 'handle', face: 'A', x: r(hx), y: r(yc + dy), d: hw.handleD, depth: fT, through: true });
+        for (const dd of [-handle / 2, handle / 2])
+          door.holes.push({ type: 'handle', face: 'A', x: r(hx), y: r(yc + dd), d: hw.handleD, depth: fT, through: true });
       }
     }
-  }
+  };
 
-  // Полки
-  if (P.layout !== 'drawers') {
-    const n = Math.max(0, num('shelves'));
-    const y0 = innerY0, y1 = shelfTop;
-    const clear = (y1 - y0 - n * t) / (n + 1);
-    if (n > 0 && clear < 80) warn.push('Полки стоят слишком часто (просвет < 80 мм).');
-    const sd = D - num('shelfRecess');
-    for (let i = 0; i < n; i++) {
-      const sy = r(y0 + clear * (i + 1) + t * i);
-      if (P.shelfType === 'fixed') {
-        joinH(add(panel(`shelf${i + 1}`, 'Полка', 'H', [t, sy, 0], innerW, sd, t, C, 'corpus', { L2: eF })));
-      } else {
-        add(panel(`shelf${i + 1}`, 'Полка', 'H', [t + 1, sy, 0], innerW - 2, sd, t, C, 'corpus', { L2: eF }));
-        for (const X of [t, W - t]) for (const Z of [D - hw.pinFront, hw.pinBack])
-          faceHole(X === t ? sideL : sideR, [X, sy - hw.pinBelow, Z], { type: 'pin', d: hw.pinD, depth: hw.pinDepth });
+  const doorJobs = [];
+  S.forEach((se, i) => {
+    const B = (se.def.blocks && se.def.blocks.length) ? se.def.blocks : [blk('open')];
+    const nb = B.length;
+    const totalH = fy1 - fy0 - (nb - 1) * g;
+    const fixedH = B.reduce((a, b) => a + (Number(b.h) > 0 ? Number(b.h) : 0), 0);
+    const autoB = B.filter(b => !(Number(b.h) > 0)).length;
+    const autoH = autoB ? (totalH - fixedH) / autoB : 0;
+    if (autoB && autoH < 80) warn.push(`Секция ${i + 1}: блоки не помещаются по высоте (на авто-блок ${r(autoH)} мм).`);
+    let ytop = fy1;
+    const Z = B.map((b, j) => {
+      const h = j === nb - 1 && !autoB ? ytop - fy0 : (Number(b.h) > 0 ? Number(b.h) : autoH);
+      const z = { b, fyTop: ytop, fyBot: ytop - h, h };
+      ytop = z.fyBot - g;
+      return z;
+    });
+    se.zones = Z;
+    if (!autoB && Math.abs(fixedH - totalH) > 0.5) warn.push(`Секция ${i + 1}: сумма высот блоков не равна высоте фасадов (${r(totalH)} мм) — нижний блок подогнан.`);
+    // внутренние границы блоков (полки-перегородки)
+    Z.forEach((z, j) => { z.top = j === 0 ? innerY1 : Z[j - 1].botBound; if (j === nb - 1) z.bot = innerY0; else {
+      const nx = Z[j + 1], center = z.fyBot - g / 2;
+      if (z.b.type === 'drawers' && nx.b.type === 'drawers') { z.bot = center; z.botBound = center; }
+      else {
+        const dv = add(panel(`s${i + 1}dv${j + 1}`, 'Полка-перегородка', 'H', [se.x0, r(center - t / 2), 0], se.w, D, t, C, 'corpus', { L2: eF }));
+        joinBetween(dv, se.left, se.right);
+        z.bot = dv.oy + t; z.botBound = dv.oy;
       }
-    }
-  }
+    } });
+    Z.forEach((z, j) => {
+      const id = `s${i + 1}b${j + 1}`;
+      if (z.b.type === 'drawers') {
+        const n = Math.max(1, Number(z.b.n) || 1), fh = (z.fyTop - z.fyBot - (n - 1) * g) / n;
+        for (let k = 0; k < n; k++) makeDrawer(se, `${id}x${k + 1}`, z.fyTop - (k + 1) * fh - k * g, fh, k === n - 1 ? z.bot : 0);
+      } else {
+        if (z.b.type === 'doors') doorJobs.push(() => makeDoors(se, z.b, id, z.fyBot, z.fyTop));
+        shelvesIn(se, z.b, z.bot, z.top, id);
+      }
+    });
+  });
+  doorJobs.forEach(f => f()); // двери после полок: планки петель обходят полкодержатели
 
   const legs = P.base === 'legs' ? (W > 1000 ? 6 : 4) : 0;
   return {
     parts, warn,
-    dims: { W, H: topOuter, D: D + (P.backType === 'overlay' ? backT : 0) + (P.layout === 'none' ? 0 : fT) },
-    extra: { drawers: drawerCount, runnerLen, legs, legsH: baseY, handle },
+    dims: { W, H: topOuter, D: D + (P.backType === 'overlay' ? backT : 0) + (parts.some(p => p.role === 'front') ? fT : 0) },
+    extra: { secInfo: S.map(se => ({ w: r(se.w), blocks: (se.zones || []).map(z => r(z.h)) })), drawers: drawerCount, runnerLen, legs, legsH: baseY, handle, hingesFull, hingesHalf },
   };
 }
 
@@ -326,9 +445,16 @@ export function holeSig(p) {
 
 // Собрать проект: все изделия + доп. детали, с учётом ручных правок
 export function buildProject(proj) {
-  const parts = [], warn = [], items = [];
+  const parts = [], warn = [], items = [], built_off = [];
   (proj.items || []).forEach((it, idx) => {
     const g = generate(it.params);
+    const kept = [];
+    g.parts.forEach(p => {
+      const ov0 = it.overrides?.[p.id];
+      if (ov0?.off) { p.item = it.params.name; p.uid = `${idx}:${p.id}`; p.itemIdx = idx; (built_off).push(p); return; }
+      kept.push(p);
+    });
+    g.parts = kept;
     g.parts.forEach(p => {
       p.item = it.params.name || `Изделие ${idx + 1}`;
       p.itemIdx = idx;
@@ -338,6 +464,15 @@ export function buildProject(proj) {
         if (ov.edges) Object.assign(p.edges, ov.edges);
         if (ov.holes) p.holes.push(...ov.holes.map(h => ({ ...h, type: 'user' })));
         if (ov.name) p.name = ov.name;
+        if (ov.L > 0 || ov.W > 0) {
+          if (ov.L > 0) p.L = r(ov.L);
+          if (ov.W > 0) p.W = r(ov.W);
+          p.resized = true;
+          const before = p.holes.length;
+          p.holes = p.holes.filter(h => h.x >= -0.01 && h.y >= -0.01 && h.x <= p.L + 0.01 && h.y <= p.W + 0.01)
+            .map(h => h.edge === 'W2' ? { ...h, x: p.L } : h.edge === 'L2' ? { ...h, y: p.W } : h);
+          if (p.holes.length < before) warn.push(`${p.item}: «${p.name}» изменена вручную — ${before - p.holes.length} отв. вне детали убраны.`);
+        }
       }
       parts.push(p);
     });
@@ -351,7 +486,7 @@ export function buildProject(proj) {
       qty: Number(c.qty) || 1,
     });
   });
-  return { parts, warn, items, groups: groupParts(parts) };
+  return { parts, warn, items, off: built_off, groups: groupParts(parts) };
 }
 
 export function groupParts(parts) {
@@ -401,7 +536,10 @@ export function summary(built, proj) {
   const hw = [];
   if (conf) hw.push(['Конфирмат 7×50 (+ заглушки)', conf, 'шт']);
   if (pins) hw.push(['Полкодержатель 5 мм', pins, 'шт']);
-  if (cups) hw.push(['Петля накладная 110° с ответной планкой', cups, 'шт']);
+  const hf = built.items.reduce((a, g) => a + (g.extra?.hingesFull || 0), 0);
+  const hh = built.items.reduce((a, g) => a + (g.extra?.hingesHalf || 0), 0);
+  if (hf) hw.push(['Петля накладная 110° с ответной планкой', hf, 'шт']);
+  if (hh) hw.push(['Петля полунакладная 110° (двери на средней перегородке)', hh, 'шт']);
   if (cups) hw.push(['Шуруп 3,5×16 для петель и планок', cups * 4, 'шт']);
   built.items.forEach((g, i) => {
     const name = proj.items[i].params.name;

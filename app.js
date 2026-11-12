@@ -1,4 +1,4 @@
-import * as C from './core.js?v=202611112352';
+import * as C from './core.js?v=202611120939';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -15,7 +15,11 @@ const newProject = () => ({ name: 'Мой проект', items: [mkItem('nightst
 function normalize(p) {
   p.items = p.items || []; p.custom = p.custom || [];
   p.settings = { ...C.DEFAULT_SETTINGS, ...(p.settings || {}) };
-  p.items.forEach(it => (it.overrides = it.overrides || {}));
+  p.items.forEach(it => {
+    it.overrides = it.overrides || {};
+    it.params = C.normalizeParams(it.params);
+    for (const k of ['layout', 'doors', 'hingeSide', 'drawers', 'drawerFrontH', 'shelves']) delete it.params[k];
+  });
   return p;
 }
 function saveLocal() { try { localStorage.setItem(LS, JSON.stringify(project)); } catch (e) { /* хранилище недоступно */ } }
@@ -50,8 +54,13 @@ function download(name, data, type) {
 const fileBase = () => (project.name || 'proekt').replace(/[\\/:*?"<>|]+/g, '_');
 
 // ---------- Пересчёт ----------
-function update({ form = false } = {}) {
+function update({ form = false, refreshPlaceholders = false } = {}) {
   built = C.buildProject(project);
+  if (refreshPlaceholders && !form) {
+    const info = built.items[sel.item]?.extra?.secInfo || [];
+    document.querySelectorAll('#form [data-sf="w"]').forEach(el => (el.placeholder = `авто ${info[+el.dataset.s]?.w ?? ''}`));
+    document.querySelectorAll('#form [data-bf="h"]').forEach(el => (el.placeholder = `авто ${info[+el.dataset.s]?.blocks[+el.dataset.b] ?? ''}`));
+  }
   if (sel.item >= project.items.length) sel.item = Math.max(0, project.items.length - 1);
   renderItems();
   if (form) renderForm();
@@ -98,8 +107,10 @@ $('#btnAddItem').onclick = () => {
 
 // ---------- Форма параметров ----------
 const EDGE_OPT = [[0, 'нет'], [0.4, '0.4 мм'], [1, '1 мм'], [2, '2 мм']];
-const hasDoors = p => p.layout === 'doors' || p.layout === 'drawers+doors';
-const hasDrawers = p => p.layout === 'drawers' || p.layout === 'drawers+doors';
+const blocksOf = p => (p.sections || []).flatMap(s => s.blocks || []);
+const hasDrawers = p => blocksOf(p).some(b => b.type === 'drawers');
+const hasFronts = p => blocksOf(p).some(b => b.type !== 'open');
+const hasShelves = p => blocksOf(p).some(b => b.type !== 'drawers');
 const FIELDS = [
   ['Габариты', [
     ['name', 'Название', 'text'],
@@ -107,7 +118,7 @@ const FIELDS = [
   ]],
   ['Материалы', [
     ['matCorpus', 'Корпус', 'mat', 'plate'], ['t', 'Толщина корпуса', 'thk', 'plate'],
-    ['matFront', 'Фасады', 'mat', 'plate', p => p.layout !== 'none'], ['frontT', 'Толщина фасадов', 'thk', 'plate', p => p.layout !== 'none'],
+    ['matFront', 'Фасады', 'mat', 'plate', hasFronts], ['frontT', 'Толщина фасадов', 'thk', 'plate', hasFronts],
     ['matBack', 'Задняя стенка, дно ящиков', 'mat', 'thin'], ['backT', 'Толщина задней стенки', 'thk', 'thin'],
   ]],
   ['Конструкция', [
@@ -119,20 +130,14 @@ const FIELDS = [
     ['backType', 'Задняя стенка', 'sel', [['overlay', 'ХДФ накладная'], ['none', 'Нет']]],
   ]],
   ['Фасады', [
-    ['layout', 'Компоновка', 'sel', [['doors', 'Двери'], ['drawers', 'Ящики'], ['drawers+doors', 'Ящики + двери'], ['none', 'Открытый']]],
-    ['doors', 'Количество дверей', 'sel', [[1, '1'], [2, '2']], hasDoors],
-    ['hingeSide', 'Петли (1 дверь)', 'sel', [['left', 'Слева'], ['right', 'Справа']], p => hasDoors(p) && +p.doors === 1],
-    ['drawers', 'Количество ящиков', 'num', hasDrawers],
-    ['drawerFrontH', 'Высота фасада ящика', 'num', p => p.layout === 'drawers+doors'],
-    ['gap', 'Зазор между фасадами', 'num', p => p.layout !== 'none'],
-    ['gapEdge', 'Зазор по краю', 'num', p => p.layout !== 'none'],
-    ['handle', 'Ручка, межосевое', 'sel', [[0, 'Без ручек'], [64, '64'], [96, '96'], [128, '128'], [160, '160'], [192, '192'], [256, '256']], p => p.layout !== 'none'],
+    ['gap', 'Зазор между фасадами', 'num', hasFronts],
+    ['gapEdge', 'Зазор по краю', 'num', hasFronts],
+    ['handle', 'Ручка, межосевое', 'sel', [[0, 'Без ручек'], [64, '64'], [96, '96'], [128, '128'], [160, '160'], [192, '192'], [256, '256']], hasFronts],
     ['runnerGap', 'Зазор под направляющую', 'num', hasDrawers],
   ]],
   ['Полки', [
-    ['shelves', 'Количество полок', 'num', p => p.layout !== 'drawers'],
-    ['shelfType', 'Крепление полок', 'sel', [['pins', 'Полкодержатели'], ['fixed', 'Конфирматы']], p => p.layout !== 'drawers'],
-    ['shelfRecess', 'Полка утоплена на', 'num', p => p.layout !== 'drawers'],
+    ['shelfType', 'Крепление полок', 'sel', [['pins', 'Полкодержатели'], ['fixed', 'Конфирматы']], hasShelves],
+    ['shelfRecess', 'Полка утоплена на', 'num', hasShelves],
   ]],
   ['Кромка', [
     ['edgeFront', 'Видимые торцы корпуса', 'sel', EDGE_OPT],
@@ -141,11 +146,73 @@ const FIELDS = [
   ]],
 ];
 
+const BLK_TYPES = [['drawers', 'Ящики'], ['doors', 'Двери'], ['open', 'Ниша']];
+function sectionsHTML(p) {
+  const info = built.items[sel.item]?.extra?.secInfo || [];
+  const secs = p.sections || [];
+  const opt = (list, v) => list.map(([k, l]) => `<option value="${k}" ${String(v) === String(k) ? 'selected' : ''}>${l}</option>`).join('');
+  let h = `<fieldset class="secs"><legend>Секции и наполнение</legend>
+    <div class="fr"><label>Количество секций</label><select data-sact="count">${opt([1, 2, 3, 4, 5, 6].map(n => [n, n]), secs.length)}</select></div>
+    <p class="hint">Секции — слева направо, между ними вертикальные перегородки. Блоки внутри секции — сверху вниз. Пустая ширина/высота = авто.</p>`;
+  secs.forEach((se, i) => {
+    const si = info[i] || { blocks: [] };
+    h += `<div class="sec"><div class="sec-h"><b>Секция ${i + 1}</b><label>ширина <input type="number" data-s="${i}" data-sf="w" value="${Number(se.w) > 0 ? se.w : ''}" placeholder="авто ${si.w ?? ''}"></label></div>`;
+    (se.blocks || []).forEach((b, j) => {
+      const bh = si.blocks[j];
+      const at = `data-s="${i}" data-b="${j}"`;
+      h += `<div class="blk blk-${b.type}"><div class="blk-r">
+        <select ${at} data-bf="type">${opt(BLK_TYPES, b.type)}</select>
+        <input type="number" ${at} data-bf="h" value="${Number(b.h) > 0 ? b.h : ''}" placeholder="авто ${bh ?? ''}" title="Высота зоны по фасаду, мм">
+        <span class="blk-btn"><button ${at} data-bact="up" title="Выше">↑</button><button ${at} data-bact="down" title="Ниже">↓</button><button ${at} data-bact="del" title="Удалить блок">✕</button></span></div>`;
+      if (b.type === 'drawers') h += `<div class="blk-r"><label>ящиков</label><input type="number" min="1" max="8" ${at} data-bf="n" value="${b.n || 1}"></div>`;
+      if (b.type === 'doors') {
+        h += `<div class="blk-r"><label>дверей</label><select ${at} data-bf="n">${opt([[1, '1'], [2, '2']], b.n || 1)}</select>`;
+        if (Number(b.n || 1) === 1) h += `<label>петли</label><select ${at} data-bf="hinge">${opt([['left', 'слева'], ['right', 'справа']], b.hinge || 'left')}</select>`;
+        h += '</div>';
+      }
+      if (b.type !== 'drawers') h += `<div class="blk-r"><label>полок</label><input type="number" min="0" max="12" ${at} data-bf="shelves" value="${b.shelves || 0}">
+        <input class="pos" ${at} data-bf="pos" value="${esc(b.pos || '')}" placeholder="высоты: 300, 650" title="Высота низа полки от дна ниши, мм, через запятую. Если заполнено — количество берётся отсюда."></div>`;
+      h += '</div>';
+    });
+    h += `<button class="addblk" data-s="${i}" data-sact="addblk">+ блок</button></div>`;
+  });
+  return h + '</fieldset>';
+}
+function onSectionsEvent(e) {
+  const el = e.target, it = project.items[sel.item]; if (!it) return false;
+  const p = it.params, secs = p.sections;
+  const si = el.dataset.s !== undefined ? +el.dataset.s : null, bi = el.dataset.b !== undefined ? +el.dataset.b : null;
+  if (el.dataset.sact === 'count' && e.type !== 'click') {
+    const n = +el.value;
+    while (secs.length < n) secs.push(C.sec([C.blk('doors', { shelves: 1 })]));
+    secs.length = n; secs.forEach(s => (s.w = 0));
+    update({ form: true }); return true;
+  }
+  if (el.dataset.sact === 'addblk' && e.type === 'click') { secs[si].blocks.push(C.blk('open')); update({ form: true }); return true; }
+  if (el.dataset.bact && e.type === 'click') {
+    const B = secs[si].blocks, a = el.dataset.bact;
+    if (a === 'del') { B.splice(bi, 1); if (!B.length) B.push(C.blk('open')); }
+    if (a === 'up' && bi > 0) [B[bi - 1], B[bi]] = [B[bi], B[bi - 1]];
+    if (a === 'down' && bi < B.length - 1) [B[bi + 1], B[bi]] = [B[bi], B[bi + 1]];
+    update({ form: true }); return true;
+  }
+  if (el.dataset.sf && e.type !== 'click') { secs[si][el.dataset.sf] = Number(el.value) || 0; debounced(); return true; }
+  if (el.dataset.bf && e.type !== 'click') {
+    const f = el.dataset.bf, b = secs[si].blocks[bi];
+    b[f] = ['type', 'hinge', 'pos'].includes(f) ? el.value : Number(el.value) || 0;
+    if (el.tagName === 'SELECT') update({ form: true }); else debounced(f === 'pos' ? 600 : 300);
+    return true;
+  }
+  return false;
+}
+let secTimer;
+function debounced(ms = 300) { clearTimeout(secTimer); secTimer = setTimeout(() => update({ form: false, refreshPlaceholders: true }), ms); }
+
 function renderForm() {
   const it = project.items[sel.item];
   if (!it) { $('#form').innerHTML = ''; return; }
   const p = it.params;
-  $('#form').innerHTML = FIELDS.map(([g, fs]) => {
+  const FS = FIELDS.map(([g, fs]) => {
     const rows = fs.filter(f => typeof f[3] === 'function' ? f[3](p) : !f[4] || f[4](p)).map(([k, label, type, opt]) => {
       const id = 'f_' + k;
       let ctl;
@@ -158,7 +225,9 @@ function renderForm() {
       return `<div class="fr"><label for="${id}">${label}</label>${ctl}</div>`;
     }).join('');
     return rows ? `<fieldset><legend>${g}</legend>${rows}</fieldset>` : '';
-  }).join('');
+  });
+  FS.splice(3, 0, sectionsHTML(p));
+  $('#form').innerHTML = FS.join('');
 }
 // ---------- Материалы ----------
 const allMaterials = () => [...C.MATERIALS, ...(project.materials || []).map(m => ({ ...m, group: 'Мои материалы' }))];
@@ -181,7 +250,9 @@ function matColor(name, role) {
 }
 
 let formTimer;
+$('#form').addEventListener('click', e => { if (e.target.tagName === 'BUTTON') onSectionsEvent(e); });
 $('#form').addEventListener('input', e => {
+  if (onSectionsEvent(e)) return;
   const k = e.target.dataset.k; if (!k) return;
   const it = project.items[sel.item], el = e.target;
   if (el.value === '__new') {
@@ -237,7 +308,7 @@ function renderParts() {
   for (const g of built.groups) {
     const p = g.rep, cs = C.cutSize(p, S);
     if (p.item !== lastItem) { html += `<tr class="grp"><td colspan="11">${esc(p.item)}</td></tr>`; lastItem = p.item; }
-    html += `<tr class="row" data-uid="${esc(p.uid)}"><td class="n">${g.no}</td><td>${esc(p.name)}</td><td>${esc(p.material)}</td>
+    html += `<tr class="row" data-uid="${esc(p.uid)}"><td class="n">${g.no}</td><td>${esc(p.name)}${p.resized ? ' <span title="Размер изменён вручную">✎</span>' : ''}</td><td>${esc(p.material)}</td>
       <td class="n">${fmt(p.L)}</td><td class="n">${fmt(p.W)}</td><td class="n">${p.T}</td><td class="n"><b>${g.qty}</b></td>
       <td>${edgeChips(g)}</td><td class="n">${fmt(cs.L)} × ${fmt(cs.W)}</td><td class="n">${p.holes.length || ''}</td>
       <td>${p.role === 'custom' ? `<button data-delc="${esc(p.uid)}" title="Удалить">✕</button>` : ''}</td></tr>`;
@@ -245,6 +316,7 @@ function renderParts() {
   $('#partsTbl').innerHTML = html + '</tbody>';
   const cur = $('#cMat').value && $('#cMat').value !== '__new' ? $('#cMat').value : 'ЛДСП Белый';
   $('#cMatWrap').innerHTML = matSelect('cMat', '', cur, '');
+  $('#offParts').innerHTML = built.off.length ? `<div class="offbox"><b>Исключённые детали:</b> ${built.off.map(p => `<span class="offp">${esc(p.item)}: ${esc(p.name)} <button data-restore="${esc(p.uid)}">вернуть</button></span>`).join('')}</div>` : '';
   const s = C.summary(built, project);
   $('#partsTotals').innerHTML =
     Object.entries(s.area).map(([k, v]) => `<div><b>${esc(k)}</b><br>${fmt(v)} м²</div>`).join('') +
@@ -268,6 +340,11 @@ $('#cMatWrap').addEventListener('change', e => {
   const name = askNewMaterial('plate');
   $('#cMatWrap').innerHTML = matSelect('cMat', '', name || 'ЛДСП Белый', '');
   saveLocal();
+});
+$('#offParts').addEventListener('click', e => {
+  const uid = e.target.dataset.restore; if (!uid) return;
+  const [idx, id] = [uid.slice(0, uid.indexOf(':')), uid.slice(uid.indexOf(':') + 1)];
+  delete project.items[+idx].overrides[id].off; update();
 });
 $('#btnAddCustom').onclick = () => {
   const n = id => Number($(id).value);
@@ -372,6 +449,8 @@ function renderDraw() {
   const p = g.rep;
   $('#drawTitle').textContent = `№${g.no} ${p.name} — ${fmt(p.L)} × ${fmt(p.W)} × ${p.T} мм, ${g.qty} шт · ${p.material}`;
   $('#drawing').innerHTML = drawSVG(p);
+  $('#eL').value = p.L; $('#eW').value = p.W;
+  $('#btnResetSize').disabled = !p.resized; $('#btnExclude').textContent = p.role === 'custom' ? 'Удалить деталь' : 'Исключить деталь';
   $('#holesTbl').innerHTML = p.holes.length ? holeHead + '<tbody>' + holeRows(p) + '</tbody>' : '<tr><td class="muted">Отверстий нет</td></tr>';
 }
 $('#drawList').addEventListener('click', e => {
@@ -398,6 +477,30 @@ $('#btnAddHole').onclick = () => {
   if (!(h.d > 0) || h.x < 0 || h.y < 0 || h.x > p.L || h.y > p.W) { toast('Отверстие вне детали или не задан диаметр'); return; }
   for (const q of g.parts) { const o = ovFor(q); o.holes = [...(o.holes || []), h]; }
   update(); toast('Отверстие добавлено');
+};
+$('#btnResize').onclick = () => {
+  const g = findGroup(sel.uid); if (!g) return;
+  const L = Number($('#eL').value), W = Number($('#eW').value);
+  if (!(L > 0 && W > 0)) { toast('Укажи размеры'); return; }
+  for (const p of g.parts) {
+    if (p.role === 'custom') { const c = ovFor(p); c.L = L; c.W = W; }
+    else { const o = ovFor(p); o.L = L; o.W = W; }
+  }
+  update(); toast('Размер изменён');
+};
+$('#btnResetSize').onclick = () => {
+  const g = findGroup(sel.uid); if (!g) return;
+  for (const p of g.parts) if (p.role !== 'custom') { const o = ovFor(p); delete o.L; delete o.W; }
+  update(); toast('Возвращён авторазмер');
+};
+$('#btnExclude').onclick = () => {
+  const g = findGroup(sel.uid); if (!g) return;
+  if (!confirm(`Убрать «${g.rep.name}» (${g.qty} шт) из проекта?`)) return;
+  for (const p of g.parts) {
+    if (p.role === 'custom') project.custom = project.custom.filter(c => 'c:' + c.id !== p.uid);
+    else ovFor(p).off = true;
+  }
+  sel.uid = null; update(); toast('Деталь исключена — вернуть можно во вкладке «Детали»');
 };
 $('#btnDXF1').onclick = () => {
   const g = findGroup(sel.uid); if (!g) return;
@@ -563,6 +666,16 @@ function render3d() {
         cyl.position.set(w[0], w[1], w[2]).sub(center).add(off);
         group.add(cyl);
       }
+    }
+  }
+  const ex = g.extra || {}, bot = parts.find(p => p.id === 'bottom');
+  if (ex.legs && bot && ex.legsH > 0) {
+    const legMat = new THREE.MeshStandardMaterial({ color: 0x555555, metalness: 0.5, roughness: 0.4 });
+    const Dc = bot.W, xs = ex.legs > 4 ? [50, d.W / 2, d.W - 50] : [50, d.W - 50];
+    for (const lx of xs) for (const lz of [50, Dc - 50]) {
+      const leg = new THREE.Mesh(new THREE.CylinderGeometry(18, 14, ex.legsH, 16), legMat);
+      leg.position.set(lx, ex.legsH / 2, lz).sub(center);
+      group.add(leg);
     }
   }
   if ($('#optDims').checked && parts.length) addDims(parts, center);

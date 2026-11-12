@@ -16,7 +16,7 @@ input:focus,select:focus{outline:2px solid #f0c9a8;border-color:var(--acc)}
 .actions{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap}
 .top button{background:#3a322c;color:#fff;border-color:#4a4038}
 .top button.primary{background:var(--acc);border-color:var(--acc)}
-.app{display:grid;grid-template-columns:330px 1fr;height:calc(100vh - 50px)}
+.app{display:grid;grid-template-columns:350px 1fr;height:calc(100vh - 50px)}
 .side{overflow:auto;padding:10px;border-right:1px solid var(--line);background:#faf8f5}
 .box{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:10px}
 .box-h{font-weight:700;margin-bottom:8px}
@@ -146,3 +146,22 @@ svg.dwg{width:100%;height:auto;display:block}
   .tbl th,.tbl td{padding:3px 5px;font-size:11px}
   svg.dwg{max-height:150mm}
 }
+
+.hint{font-size:12px;color:var(--mut);margin:4px 0 8px}
+.sec{border:1px solid var(--line);border-radius:9px;padding:7px;margin:8px 0;background:#fcfaf7}
+.sec-h{display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:6px}
+.sec-h label{font-size:12px;color:var(--mut);display:flex;align-items:center;gap:4px}
+.sec-h input{width:90px}
+.blk{border-left:4px solid #c9b79c;background:#fff;border-radius:6px;padding:5px 6px;margin:5px 0}
+.blk-drawers{border-left-color:#c26a2e}.blk-doors{border-left-color:#2f7de1}.blk-open{border-left-color:#9aa59a}
+.blk-r{display:flex;align-items:center;gap:5px;margin:3px 0;flex-wrap:wrap}
+.blk-r select{flex:1;min-width:80px}
+.blk-r select[data-bf=n],.blk-r select[data-bf=hinge]{flex:none;width:auto;min-width:0}
+.blk-r input[type=number]{width:84px;font-size:13px}
+.blk-r label{font-size:12px;color:var(--mut)}
+.blk-r input.pos{flex:1;min-width:120px;font-size:12px}
+.blk-btn{display:flex;gap:2px}
+.blk-btn button{padding:2px 6px;font-size:12px}
+.addblk{width:100%;padding:4px;font-size:12px;border-style:dashed}
+.offbox{background:#fff4e5;border:1px solid #f3d3a6;border-radius:9px;padding:8px 12px;margin-top:10px;display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center}
+.offp button{padding:1px 7px;font-size:12px}
