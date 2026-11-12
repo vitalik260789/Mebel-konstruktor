@@ -594,9 +594,11 @@ export const matKey = p => `${p.material} ${p.T} мм`;
 // Итоги: площадь плиты, кромка, фурнитура
 export function summary(built, proj) {
   const area = {}, edge = {};
-  let conf = 0, pins = 0, cups = 0, handles = 0, backScrews = 0, cams = 0, dowels = 0;
+  let conf = 0, pins = 0, cups = 0, handles = 0, backScrews = 0, cams = 0, dowels = 0, holes = 0, cutLen = 0;
   for (const g of built.groups) {
     const p = g.rep, q = g.qty, k = matKey(p);
+    holes += p.holes.length * q;
+    cutLen += ((p.L + p.W) * q) / 1000;
     area[k] = (area[k] || 0) + (p.L * p.W * q) / 1e6;
     for (const [e, v] of Object.entries(p.edges)) if (v > 0) {
       const len = e[0] === 'L' ? p.L : p.W;
@@ -613,26 +615,26 @@ export function summary(built, proj) {
     if (p.role === 'back' && !/в паз/.test(p.name)) backScrews += Math.ceil((2 * (p.L + p.W)) / 150) * q;
   }
   const hw = [];
-  if (conf) hw.push(['Конфирмат 7×50 (+ заглушки)', conf, 'шт']);
-  if (cams) hw.push(['Эксцентрик (минификс) Ø15 + шток', cams, 'шт']);
-  if (dowels) hw.push(['Шкант 8×30 (+ клей ПВА)', dowels, 'шт']);
-  if (pins) hw.push(['Полкодержатель 5 мм', pins, 'шт']);
+  if (conf) hw.push(['Конфирмат 7×50 (+ заглушки)', conf, 'шт', 'conf']);
+  if (cams) hw.push(['Эксцентрик (минификс) Ø15 + шток', cams, 'шт', 'cam']);
+  if (dowels) hw.push(['Шкант 8×30 (+ клей ПВА)', dowels, 'шт', 'dowel']);
+  if (pins) hw.push(['Полкодержатель 5 мм', pins, 'шт', 'pin']);
   const hf = built.items.reduce((a, g) => a + (g.extra?.hingesFull || 0), 0);
   const hh = built.items.reduce((a, g) => a + (g.extra?.hingesHalf || 0), 0);
   const hl = [...new Set(built.items.filter(g => g.extra?.hingesFull || g.extra?.hingesHalf).map(g => g.extra.hingeLabel))].join(', ');
-  if (hf) hw.push([`Петля накладная 110° с ответной планкой — ${hl}`, hf, 'шт']);
-  if (hh) hw.push([`Петля полунакладная 110° (двери на средней перегородке) — ${hl}`, hh, 'шт']);
-  if (cups) hw.push(['Шуруп 3,5×16 для петель и планок', cups * 4, 'шт']);
+  if (hf) hw.push([`Петля накладная 110° с ответной планкой — ${hl}`, hf, 'шт', 'hingeFull']);
+  if (hh) hw.push([`Петля полунакладная 110° (двери на средней перегородке) — ${hl}`, hh, 'шт', 'hingeHalf']);
+  if (cups) hw.push(['Шуруп 3,5×16 для петель и планок', cups * 4, 'шт', 'screwHinge']);
   built.items.forEach((g, i) => {
     const name = proj.items[i].params.name;
-    if (g.extra?.drawers) hw.push([`Направляющие ${g.extra.runnerLabel}, L=${g.extra.runnerLen} (${name})`, g.extra.drawers, 'пар']);
-    if (g.extra?.legs) hw.push([`Ножки мебельные H=${g.extra.legsH} (${name})`, g.extra.legs, 'шт']);
+    if (g.extra?.drawers) hw.push([`Направляющие ${g.extra.runnerLabel}, L=${g.extra.runnerLen} (${name})`, g.extra.drawers, 'пар', `runner:${g.extra.runnerLabel}:${g.extra.runnerLen}`]);
+    if (g.extra?.legs) hw.push([`Ножки мебельные H=${g.extra.legsH} (${name})`, g.extra.legs, 'шт', `legs:${g.extra.legsH}`]);
   });
-  if (handles) hw.push(['Ручка (межосевое по проекту) + винты М4', handles, 'шт']);
-  if (backScrews) hw.push(['Саморез/гвоздь для ХДФ (задняя стенка, дно ящиков)', backScrews, 'шт']);
+  if (handles) hw.push(['Ручка (межосевое по проекту) + винты М4', handles, 'шт', 'handle']);
+  if (backScrews) hw.push(['Саморез/гвоздь для ХДФ (задняя стенка, дно ящиков)', backScrews, 'шт', 'backScrew']);
   for (const [v, m] of Object.entries(edge).sort((a, b) => b[0] - a[0]))
-    hw.push([`Кромка ПВХ ${v} мм (с запасом 10%)`, Math.ceil(m * 1.1 * 10) / 10, 'м']);
-  return { area, edge, hw };
+    hw.push([`Кромка ПВХ ${v} мм (с запасом 10%)`, Math.ceil(m * 1.1 * 10) / 10, 'м', `edge:${v}`]);
+  return { area, edge, hw, holes, cutLen: Math.round(cutLen * 10) / 10 };
 }
 
 // Гильотинный раскрой (пригоден для форматно-раскроечного станка)
@@ -717,4 +719,44 @@ export function toDXF(groups) {
   }
   out.push('0', 'ENDSEC', '0', 'EOF');
   return out.join('\n');
+}
+
+// ---------- Выгрузка для распиловочного центра ----------
+export const EXPORT_FIELDS = {
+  no: '№', item: 'Изделие', name: 'Деталь', material: 'Материал', T: 'Толщина', L: 'Длина чистовая', W: 'Ширина чистовая',
+  cutL: 'Длина пильная', cutW: 'Ширина пильная', qty: 'Кол-во', edgeL1: 'Кромка Д1', edgeL2: 'Кромка Д2', edgeW1: 'Кромка Ш1', edgeW2: 'Кромка Ш2',
+  edgesLong: 'Кол-во длинных кромок', edgesShort: 'Кол-во коротких кромок', edgeMaxT: 'Толщина кромки', edgeCode: 'Кромка (Д1/Д2/Ш1/Ш2)',
+  grain: 'Текстура (1 — не поворачивать)', rotate: 'Можно поворачивать (1/0)', holes: 'Отверстий', groove: 'Паз', note: 'Примечание',
+};
+export const EXPORT_PRESETS = {
+  ru: { label: 'Стандарт (русский)', sep: ';', comma: true, cols: 'Деталь = name\nМатериал = material\nТолщина = T\nДлина = cutL\nШирина = cutW\nКол-во = qty\nКромка Д1 = edgeL1\nКромка Д2 = edgeL2\nКромка Ш1 = edgeW1\nКромка Ш2 = edgeW2\nПаз = groove\nПримечание = note' },
+  hu: { label: 'Magyar lapszabászat', sep: ';', comma: true, cols: 'Megnevezés = name\nAnyag = material\nVastagság = T\nHossz = L\nSzélesség = W\nDarab = qty\nÉlzárás hossz (db) = edgesLong\nÉlzárás szél. (db) = edgesShort\nÉlvastagság = edgeMaxT\nForgatható = rotate\nMegjegyzés = note' },
+  min: { label: 'Минимальный (размеры и количество)', sep: ';', comma: true, cols: 'Длина = cutL\nШирина = cutW\nКол-во = qty\nМатериал = material' },
+};
+export function exportRows(built, S, cfg) {
+  const cols = String(cfg.cols || '').split('\n').map(l => l.split('=')).filter(a => a.length === 2).map(([h, f]) => [h.trim(), f.trim()]).filter(([, f]) => EXPORT_FIELDS[f]);
+  const rows = [cols.map(c => c[0])];
+  for (const g of built.groups) {
+    const p = g.rep, cs = cutSize(p, S), e = p.edges;
+    const longE = ['L1', 'L2'], shortE = ['W1', 'W2'];
+    const v = {
+      no: g.no, item: p.item, name: p.name, material: p.material, T: p.T, L: p.L, W: p.W, cutL: cs.L, cutW: cs.W, qty: g.qty,
+      edgeL1: e.L1, edgeL2: e.L2, edgeW1: e.W1, edgeW2: e.W2,
+      edgesLong: longE.filter(k => e[k] > 0).length, edgesShort: shortE.filter(k => e[k] > 0).length,
+      edgeMaxT: Math.max(e.L1, e.L2, e.W1, e.W2), edgeCode: [e.L1, e.L2, e.W1, e.W2].join('/'),
+      grain: S.grain ? 1 : 0, rotate: S.grain ? 0 : 1, holes: p.holes.length,
+      groove: (p.grooves || []).map(q => `паз ${q.w}x${q.depth}, ${q.pos} от ${q.axis === 'y' ? 'Ш1' : 'Д1'}`).join('; '),
+      note: [p.item, (p.grooves || []).length ? 'паз' : '', p.holes.length ? `присадка ${p.holes.length} отв.` : ''].filter(Boolean).join(', '),
+    };
+    rows.push(cols.map(([, f]) => v[f]));
+  }
+  return rows;
+}
+export function toCSV(rows, cfg) {
+  const sep = cfg.sep === 'tab' ? '\t' : cfg.sep || ';';
+  return '﻿' + rows.map(r => r.map(x => {
+    let t = x === undefined || x === null ? '' : String(x);
+    if (typeof x === 'number' && cfg.comma) t = t.replace('.', ',');
+    return t.includes(sep) || /["\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+  }).join(sep)).join('\r\n');
 }

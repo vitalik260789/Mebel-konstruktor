@@ -6,7 +6,7 @@
 <title>Мебель-Конструктор — проектирование корпусной мебели</title>
 <meta name="description" content="Проектирование корпусной мебели: 3D, деталировка, присадка, чертежи деталей, карта раскроя, экспорт CSV и DXF.">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='4' y='3' width='24' height='26' rx='2' fill='%23c26a2e'/><rect x='7' y='6' width='18' height='9' fill='%23f6e7d8'/><rect x='7' y='17' width='18' height='9' fill='%23f6e7d8'/><circle cx='16' cy='10.5' r='1.4' fill='%23c26a2e'/><circle cx='16' cy='21.5' r='1.4' fill='%23c26a2e'/></svg>">
-<link rel="stylesheet" href="style.css?v=202611120947">
+<link rel="stylesheet" href="style.css?v=202611120950">
 <script type="importmap">
 { "imports": {
   "three": "./vendor/three.module.js",
@@ -51,6 +51,7 @@
       <button data-tab="draw">Чертежи</button>
       <button data-tab="nest">Раскрой</button>
       <button data-tab="hw">Фурнитура</button>
+      <button data-tab="cost">Смета</button>
       <button data-tab="help">Как пользоваться</button>
     </nav>
     <div id="warn" class="warn" hidden></div>
@@ -77,8 +78,22 @@
       <div class="bar">
         <span class="muted">Нажми на кромку (Д1/Д2/Ш1/Ш2), чтобы поменять её толщину. Нажми на строку, чтобы открыть чертёж.</span>
         <span class="grow"></span>
-        <button id="btnCSV">Скачать CSV для распила</button>
+        <button id="btnExpCfg">Формат выгрузки…</button>
+        <button id="btnCSV" class="primary">Скачать CSV для распила</button>
         <button id="btnDXFall">DXF всех деталей</button>
+      </div>
+      <div id="expCfg" class="custom" hidden>
+        <div class="grid-form">
+          <label>Шаблон<select id="expPreset"></select></label>
+          <label>Разделитель<select id="expSep"><option value=";">; (Excel, Европа)</option><option value=",">, (запятая)</option><option value="tab">Tab</option></select></label>
+          <label class="chk"><input type="checkbox" id="expComma"> десятичная запятая</label>
+        </div>
+        <div class="exp-cols">
+          <label>Колонки: «Заголовок = поле», по одной на строку, в нужном порядке
+            <textarea id="expCols" rows="10"></textarea></label>
+          <div class="exp-help"><b>Доступные поля</b><div id="expFields"></div></div>
+        </div>
+        <p class="muted">Пришли бланк своего распиловочного центра — подстрою шаблон под него. Настройка хранится в проекте.</p>
       </div>
       <div class="tblwrap"><table class="tbl" id="partsTbl"></table></div>
       <div id="offParts"></div>
@@ -165,6 +180,18 @@
       <div id="hwOut"></div>
     </section>
 
+    <section class="tab" id="tab-cost" hidden>
+      <div class="bar wrap">
+        <label>Валюта<select id="curSel"><option>Ft</option><option>€</option><option>₽</option><option>BYN</option><option>$</option></select></label>
+        <label>Наценка, %<input id="markup" type="number" min="0"></label>
+        <label class="chk"><input type="checkbox" id="byArea"> Плиту считать по площади (+15% на отход), а не целыми листами</label>
+        <span class="grow"></span>
+        <button id="btnCostCSV">Скачать смету CSV</button>
+      </div>
+      <p class="muted">Впиши свои цены — они сохраняются в проекте и запоминаются в браузере для следующих проектов. Количество листов берётся из раскроя.</p>
+      <div id="costOut"></div>
+    </section>
+
     <section class="tab" id="tab-help" hidden>
       <div class="help">
         <h2>Как пользоваться</h2>
@@ -177,6 +204,8 @@
           <li><b>Чертежи.</b> Для каждой детали: размеры, координаты отверстий от левого нижнего угла (0,0), таблица присадки. Можно добавить свои отверстия, изменить размер детали вручную или исключить её из проекта.</li>
           <li><b>Шаблоны 1:1.</b> Во вкладке «Чертежи» кнопка «Шаблон 1:1» печатает отверстия в натуральную величину на листах A4: для пласти A, для пласти B (зеркально) и полоски на торцы. Большие детали разбиты на листы с перекрытием 10 мм. Печатай в масштабе 100% и проверь контрольный отрезок 100 мм линейкой. Приложи лист к кромкам детали, накерни центры и сверли.</li>
           <li><b>Раскрой.</b> Гильотинная раскладка на листы (подходит для форматно-раскроечного станка) с учётом пропила и обзола.</li>
+          <li><b>Смета.</b> Вкладка «Смета»: впиши цены листов, кромки, распила, присадки и фурнитуры — получишь себестоимость и цену с наценкой. Цены запоминаются для следующих проектов.</li>
+          <li><b>Выгрузка для распила.</b> «Формат выгрузки…» во вкладке «Детали»: готовые шаблоны (в т.ч. венгерский для lapszabászat) или свои колонки.</li>
           <li><b>Печать.</b> Кнопка «Печать» собирает спецификацию, фурнитуру, все чертежи и раскрой. В окне печати можно выбрать «Сохранить как PDF».</li>
           <li><b>Поделиться.</b> Ссылка содержит весь проект. Друг откроет её у себя и сможет работать со своей копией. Проект также сам сохраняется в этом браузере.</li>
         </ol>
@@ -202,6 +231,6 @@
 <div id="modal" class="modal" hidden><div class="modal-c"><div id="modalBody"></div><div class="modal-a"><button id="modalClose">Закрыть</button></div></div></div>
 <div id="toast" class="toast" hidden></div>
 <div id="print"></div>
-<script type="module" src="app.js?v=202611120947"></script>
+<script type="module" src="app.js?v=202611120950"></script>
 </body>
 </html>

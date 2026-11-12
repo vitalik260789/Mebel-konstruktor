@@ -1,4 +1,4 @@
-import * as C from './core.js?v=202611120947';
+import * as C from './core.js?v=202611120950';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -291,7 +291,7 @@ function setTab(t) {
   renderTab();
 }
 function renderTab() {
-  ({ '3d': render3d, parts: renderParts, draw: renderDraw, nest: renderNest, hw: renderHW, help: () => {} })[sel.tab]();
+  ({ '3d': render3d, parts: renderParts, draw: renderDraw, nest: renderNest, hw: renderHW, cost: renderCost, help: () => {} })[sel.tab]();
 }
 
 // ---------- Ручные правки ----------
@@ -364,20 +364,19 @@ $('#btnAddCustom').onclick = () => {
   project.custom.push({ id, name: $('#cName').value || 'Деталь', material: $('#cMat').value || 'ЛДСП', T: n('#cT'), L: n('#cL'), W: n('#cW'), qty: Math.max(1, n('#cQ') || 1), edges: {}, holes: [] });
   update(); toast('Деталь добавлена');
 };
-function csv() {
-  const S = project.settings;
-  const rows = [['№', 'Изделие', 'Деталь', 'Материал', 'Толщина', 'Длина', 'Ширина', 'Кол-во', 'Кромка Д1', 'Кромка Д2', 'Кромка Ш1', 'Кромка Ш2', 'Пильная длина', 'Пильная ширина', 'Отверстий', 'Паз']];
-  for (const g of built.groups) {
-    const p = g.rep, cs = C.cutSize(p, S);
-    rows.push([g.no, p.item, p.name, p.material, p.T, p.L, p.W, g.qty, p.edges.L1, p.edges.L2, p.edges.W1, p.edges.W2, cs.L, cs.W, p.holes.length,
-      (p.grooves || []).map(q => `паз ${q.w}x${q.depth} пласть ${q.face}, ${q.pos} от ${q.axis === 'y' ? 'Ш1' : 'Д1'}`).join('; ')]);
-  }
-  return '﻿' + rows.map(r => r.map(v => {
-    const s = typeof v === 'number' ? String(v).replace('.', ',') : String(v);
-    return /[;"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-  }).join(';')).join('\r\n');
+const expCfg = () => (project.exportCfg = project.exportCfg || { preset: 'ru', ...C.EXPORT_PRESETS.ru });
+$('#expPreset').innerHTML = Object.entries(C.EXPORT_PRESETS).map(([k, v]) => `<option value="${k}">${v.label}</option>`).join('') + '<option value="custom">Свой</option>';
+$('#expFields').innerHTML = Object.entries(C.EXPORT_FIELDS).map(([k, v]) => `<div><code>${k}</code> — ${v}</div>`).join('');
+function renderExpCfg() {
+  const c = expCfg();
+  $('#expPreset').value = c.preset || 'custom'; $('#expSep').value = c.sep || ';'; $('#expComma').checked = !!c.comma; $('#expCols').value = c.cols || '';
 }
-$('#btnCSV').onclick = () => download(fileBase() + '_detali.csv', csv(), 'text/csv;charset=utf-8');
+$('#btnExpCfg').onclick = () => { $('#expCfg').hidden = !$('#expCfg').hidden; renderExpCfg(); };
+$('#expPreset').onchange = e => { const k = e.target.value; if (C.EXPORT_PRESETS[k]) project.exportCfg = { preset: k, ...C.EXPORT_PRESETS[k] }; else expCfg().preset = 'custom'; renderExpCfg(); saveLocal(); };
+$('#expSep').onchange = e => { expCfg().sep = e.target.value; saveLocal(); };
+$('#expComma').onchange = e => { expCfg().comma = e.target.checked; saveLocal(); };
+$('#expCols').oninput = e => { const c = expCfg(); c.cols = e.target.value; c.preset = 'custom'; $('#expPreset').value = 'custom'; saveLocal(); };
+$('#btnCSV').onclick = () => download(fileBase() + '_raspil.csv', C.toCSV(C.exportRows(built, project.settings, expCfg()), expCfg()), 'text/csv;charset=utf-8');
 $('#btnDXFall').onclick = () => download(fileBase() + '_detali.dxf', C.toDXF(built.groups), 'application/dxf');
 
 // ---------- Чертежи ----------
@@ -577,6 +576,64 @@ function hwHTML() {
 function renderHW() {
   $('#hwOut').innerHTML = hwHTML() + '<p class="muted">Количество рассчитано по присадке. Тип петель, направляющих и ручек уточни под свою фурнитуру.</p>';
 }
+
+// ---------- Смета ----------
+const LSP = 'mebel-prices-v1';
+function prices() {
+  if (!project.prices) { let d = null; try { d = JSON.parse(localStorage.getItem(LSP) || 'null'); } catch (e) { /* нет */ } project.prices = d || { cur: 'Ft', markup: 0, v: {} }; }
+  project.prices.v = project.prices.v || {};
+  return project.prices;
+}
+function savePrices() { saveLocal(); try { localStorage.setItem(LSP, JSON.stringify(project.prices)); } catch (e) { /* нет */ } }
+function costRows() {
+  const s = C.summary(built, project), res = C.nest(built, project.settings), P = prices();
+  const rows = [];
+  const add = (sec, key, name, qty, unit) => rows.push({ sec, key, name, qty, unit, price: Number(P.v[key]) || 0 });
+  const SA = project.settings.sheetL * project.settings.sheetW / 1e6;
+  for (const m of res) {
+    const q = P.byArea ? Math.round((s.area[m.mat] || 0) * 1.15 / SA * 100) / 100 : m.sheets.length;
+    add('Плитные материалы', 'sheet:' + m.mat, `${m.mat}, лист ${project.settings.sheetL}×${project.settings.sheetW}${P.byArea ? ' (по площади +15%)' : ''}`, q, 'лист');
+  }
+  for (const h of s.hw.filter(h => h[3].startsWith('edge:'))) add('Кромка', h[3], h[0], h[1], h[2]);
+  add('Услуги', 'svc:cut', 'Распил (по длине реза)', s.cutLen, 'м');
+  const edgeTotal = Object.values(s.edge).reduce((a, b) => a + b, 0);
+  add('Услуги', 'svc:band', 'Кромкование (работа)', Math.round(edgeTotal * 10) / 10, 'м');
+  add('Услуги', 'svc:drill', 'Присадка (сверление)', s.holes, 'отв.');
+  for (const h of s.hw.filter(h => !h[3].startsWith('edge:'))) add('Фурнитура', 'hw:' + h[3], h[0], h[1], h[2]);
+  return rows;
+}
+function renderCost() {
+  const P = prices(), rows = costRows();
+  $('#curSel').value = P.cur || 'Ft'; $('#markup').value = P.markup || 0; $('#byArea').checked = !!P.byArea;
+  let html = '<div class="tblwrap"><table class="tbl cost"><thead><tr><th>Позиция</th><th>Кол-во</th><th>Ед.</th><th>Цена за ед.</th><th>Сумма</th></tr></thead><tbody>';
+  let last = '', total = 0;
+  const secSum = {};
+  for (const r of rows) {
+    const sum = r.qty * r.price; total += sum; secSum[r.sec] = (secSum[r.sec] || 0) + sum;
+    if (r.sec !== last) { html += `<tr class="grp"><td colspan="5">${r.sec}</td></tr>`; last = r.sec; }
+    html += `<tr><td>${esc(r.name)}</td><td class="n">${fmt(r.qty)}</td><td>${r.unit}</td><td><input type="number" min="0" step="any" class="price" data-key="${esc(r.key)}" value="${r.price || ''}" placeholder="0"></td><td class="n">${money(sum)}</td></tr>`;
+  }
+  const mk = Number(P.markup) || 0;
+  html += `</tbody><tfoot>${Object.entries(secSum).map(([k, v]) => `<tr><td colspan="4">${k}</td><td class="n">${money(v)}</td></tr>`).join('')}
+    <tr class="tot"><td colspan="4">Себестоимость</td><td class="n">${money(total)}</td></tr>
+    <tr class="tot"><td colspan="4">Цена с наценкой ${mk}%</td><td class="n">${money(total * (1 + mk / 100))}</td></tr></tfoot></table></div>`;
+  $('#costOut').innerHTML = html;
+}
+const money = v => `${(Math.round(v * 100) / 100).toLocaleString('ru-RU')} ${esc(prices().cur || '')}`;
+$('#costOut').addEventListener('change', e => {
+  const k = e.target.dataset.key; if (!k) return;
+  prices().v[k] = Number(e.target.value) || 0; savePrices(); renderCost();
+});
+$('#curSel').onchange = e => { prices().cur = e.target.value; savePrices(); renderCost(); };
+$('#byArea').onchange = e => { prices().byArea = e.target.checked; savePrices(); renderCost(); };
+$('#markup').onchange = e => { prices().markup = Number(e.target.value) || 0; savePrices(); renderCost(); };
+$('#btnCostCSV').onclick = () => {
+  const rows = costRows(), P = prices();
+  const out = [['Раздел', 'Позиция', 'Кол-во', 'Ед.', `Цена, ${P.cur}`, `Сумма, ${P.cur}`], ...rows.map(r => [r.sec, r.name, r.qty, r.unit, r.price, Math.round(r.qty * r.price * 100) / 100])];
+  const total = rows.reduce((a, r) => a + r.qty * r.price, 0);
+  out.push(['', 'Себестоимость', '', '', '', Math.round(total * 100) / 100], ['', `С наценкой ${P.markup || 0}%`, '', '', '', Math.round(total * (1 + (P.markup || 0) / 100) * 100) / 100]);
+  download(fileBase() + '_smeta.csv', C.toCSV(out, { sep: ';', comma: true }), 'text/csv;charset=utf-8');
+};
 
 // ---------- 3D ----------
 let T3 = null, t3loading = false;
