@@ -239,12 +239,15 @@ export function generate(P0, hw0 = HW) {
   const dowelAt = (face, edgeP, w) => {
     const le = toLocal(edgeP, w), edge = edgeOf(edgeP, le);
     if (!edge) return;
-    edgeP.holes.push({ type: 'dowel', edge, x: r(le.x), y: r(le.y), d: hw.dowelD, depth: hw.dowelEdgeDepth });
+    const room = edge[0] === 'W' ? edgeP.L : edgeP.W;
+    edgeP.holes.push({ type: 'dowel', edge, x: r(le.x), y: r(le.y), d: hw.dowelD, depth: Math.min(hw.dowelEdgeDepth, Math.max(10, room - 6)) });
     const lf = toLocal(face, w);
     face.holes.push({ type: 'dowel', face: contactFace(face, lf), x: r(lf.x), y: r(lf.y), d: hw.dowelD, depth: Math.min(12, face.T - 4) });
   };
   // Соединение корпусных деталей выбранной системой; partner — точка для парного шканта у эксцентрика
+  const edgeRoom = (p, w) => { const e = edgeOf(p, toLocal(p, w)); return !e ? 0 : e[0] === 'W' ? p.L : p.W; };
   const joint = (face, edgeP, w, partner) => {
+    if (SYS === 'minifix' && edgeRoom(edgeP, w) < hw.camDist + hw.camD / 2 + 4) { dowelAt(face, edgeP, w); return; } // корпус эксцентрика не влезает — шкант
     if (SYS === 'minifix') { camAt(face, edgeP, w); if (partner) dowelAt(face, edgeP, partner); }
     else if (SYS === 'dowel') dowelAt(face, edgeP, w);
     else conf(face, edgeP, w);
@@ -311,7 +314,7 @@ export function generate(P0, hw0 = HW) {
       joint(sideL, pl, [t, o, pl.oz + t / 2], null);
       joint(sideR, pl, [W - t, o, pl.oz + t / 2], null);
     }
-    for (const o of spots(innerW, 80, 400)) joint(bottom, pl, [t + o, bottomY, pl.oz + t / 2], [t + pair(o, innerW), bottomY, pl.oz + t / 2]);
+    if (plinth >= 60) for (const o of spots(innerW, 80, 400)) joint(bottom, pl, [t + o, bottomY, pl.oz + t / 2], [t + pair(o, innerW), bottomY, pl.oz + t / 2]);
   }
 
   // Задняя стенка

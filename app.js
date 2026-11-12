@@ -1,5 +1,5 @@
-import * as C from './core.js?v=202611122235';
-import * as HLZ from './supplier-hlz.js?v=202611122235';
+import * as C from './core.js?v=202611122315';
+import * as HLZ from './supplier-hlz.js?v=202611122315';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -1163,9 +1163,25 @@ document.addEventListener('keydown', e => {
 (async function start() {
   project = null;
   if (location.hash.startsWith('#p=')) {
-    try { project = normalize(await decodeProject(location.hash.slice(3))); toast('Открыт проект по ссылке'); }
+    let shared = null;
+    try { shared = normalize(await decodeProject(location.hash.slice(3))); }
     catch (e) { toast('Ссылка повреждена — открыт сохранённый проект'); }
     history.replaceState(null, '', location.pathname + location.search);
+    const local = loadLocal();
+    if (shared && local && local.items?.length) {
+      const names = shared.items.map(i => `«${i.params.name}»`).join(', ');
+      if (confirm(`По ссылке пришло: ${names}.\n\nОК — добавить к твоему проекту «${local.name}».\nОтмена — открыть отдельным проектом (твой текущий проект скачается файлом, чтобы не потерялся).`)) {
+        project = normalize(local);
+        const base = project.items.length;
+        project.items.push(...shared.items);
+        project.custom.push(...(shared.custom || []));
+        sel.item = base;
+        toast('Изделия из ссылки добавлены в проект');
+      } else {
+        download(`${(local.name || 'proekt').replace(/[\\/:*?"<>|]+/g, '_')}_rezerv.mebel.json`, JSON.stringify(local, null, 1), 'application/json');
+        project = shared; toast('Открыт проект по ссылке, прежний скачан файлом');
+      }
+    } else if (shared) { project = shared; toast('Открыт проект по ссылке'); }
   }
   if (!project) { const l = loadLocal(); project = l ? normalize(l) : newProject(); }
   $('#projName').value = project.name;
